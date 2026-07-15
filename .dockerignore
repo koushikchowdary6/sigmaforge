@@ -1,0 +1,14 @@
+# Root-level ignore, used by the frontend build (context: .. in compose).
+**/node_modules/
+**/dist/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/tests/
+.git/
+.env
+*.pem
+docs/
