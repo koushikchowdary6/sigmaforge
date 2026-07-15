@@ -1,5 +1,9 @@
 # SigmaForge
 
+[![CI](https://github.com/koushikchowdary6/sigmaforge/actions/workflows/ci.yml/badge.svg)](https://github.com/koushikchowdary6/sigmaforge/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/koushikchowdary6/sigmaforge)](https://github.com/koushikchowdary6/sigmaforge/releases/tag/v0.1.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **An AI-assisted detection engineering platform, and the testbed for a research question:** can adversarial context manipulation covertly sabotage LLM-generated SIEM detection rules, and does human review catch it?
 
 This repository is under active, incremental development. Status below is accurate as of the current commit — not aspirational.
