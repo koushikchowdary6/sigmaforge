@@ -1,0 +1,113 @@
+name: sigmaforge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sigmaforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sigmaforge}
+      POSTGRES_DB: ${POSTGRES_DB:-sigmaforge}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sigmaforge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-sigmaforge}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-sigmaforge123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/backend.Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sigmaforge}:${POSTGRES_PASSWORD:-sigmaforge}@postgres:5432/${POSTGRES_DB:-sigmaforge}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      ENVIRONMENT: development
+      DEBUG: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # No dependency on redis here: in E0 the API service does not talk to
+    # Redis at all (only the worker does, as its Celery broker). Adding
+    # REDIS_URL / a redis healthcheck dependency here would be exactly the
+    # kind of unused, misleading configuration a release audit should catch --
+    # it will come back once the backend needs to enqueue jobs (E1+).
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  worker:
+    build:
+      context: ../worker
+      dockerfile: ../infra/docker/worker.Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: development
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+
+  frontend:
+    build:
+      # Root context (not ../frontend) -- this Dockerfile also needs
+      # infra/docker/nginx.conf, which lives outside the frontend/
+      # directory. A per-service-scoped context can't reach it.
+      context: ..
+      dockerfile: infra/docker/frontend.Dockerfile
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "5173:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  minio_data:
