@@ -25,3 +25,8 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+# Stray directories from a sandbox filesystem quirk hit during git init
+# (a corrupted .git/config the sandbox couldn't delete, worked around by
+# renaming it aside). Harmless, safe to delete manually outside the sandbox.
+.git_broken*/
