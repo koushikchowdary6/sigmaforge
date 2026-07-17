@@ -30,3 +30,4 @@ dist/
 # (a corrupted .git/config the sandbox couldn't delete, worked around by
 # renaming it aside). Harmless, safe to delete manually outside the sandbox.
 .git_broken*/
+*.tsbuildinfo
