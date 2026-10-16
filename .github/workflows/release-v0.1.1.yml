@@ -1,0 +1,29 @@
+name: publish-v0.1.1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-v0.1.1.yml"
+      - "RELEASE_NOTES_v0.1.1.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish v0.1.1 if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.1.1 >/dev/null 2>&1; then
+            echo "v0.1.1 already exists; leaving it unchanged."
+            exit 0
+          fi
+
+          gh release create v0.1.1             --target "$GITHUB_SHA"             --title "v0.1.1 — CI & Runtime Hardening"             --notes-file RELEASE_NOTES_v0.1.1.md
