@@ -1,12 +1,12 @@
 # SigmaForge
 
 [![CI](https://github.com/koushikchowdary6/sigmaforge/actions/workflows/ci.yml/badge.svg)](https://github.com/koushikchowdary6/sigmaforge/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/koushikchowdary6/sigmaforge)](https://github.com/koushikchowdary6/sigmaforge/releases/tag/v0.1.0)
+[![Release](https://img.shields.io/github/v/release/koushikchowdary6/sigmaforge)](https://github.com/koushikchowdary6/sigmaforge/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 **An AI-assisted detection engineering platform, and the testbed for a research question:** can adversarial context manipulation covertly sabotage LLM-generated SIEM detection rules, and does human review catch it?
 
-This repository is under active, incremental development. Status below is accurate as of the current commit — not aspirational.
+This repository is under active, incremental development. **Current release: v0.1.1 (CI & runtime hardening).** Status below is accurate as of the current commit — not aspirational.
 
 ## What's actually built (Milestone E0)
 
@@ -21,7 +21,7 @@ This repository is under active, incremental development. Status below is accura
 
 ## Verification status (honest, not aspirational)
 
-This was built in a sandboxed environment without a Docker daemon or a local Postgres server available. Here's exactly what was and wasn't verified, and how:
+Local development was originally done in a sandbox without Docker/Postgres, so local verification remains intentionally separated from CI verification. GitHub Actions now runs the full container stack end to end. Here's exactly what is verified and where:
 
 | Check | Status | How |
 |---|---|---|
@@ -31,16 +31,16 @@ This was built in a sandboxed environment without a Docker daemon or a local Pos
 | Backend type check | ✅ Clean | `mypy --strict`-equivalent config, 22 source files |
 | Migration SQL syntax | ✅ Valid | All 88 DDL statements parsed successfully by `pglast` (the real Postgres grammar, not a guess) |
 | Migration revision graph | ✅ Valid | `alembic history` resolves the chain correctly |
-| Migration executes against a live Postgres | ⚠️ Not verified here | No Postgres server in this sandbox (no root access to install one). **Run `docker compose up` and `alembic upgrade head` yourself to confirm — see below.** |
+| Migration executes against a live Postgres | ⚠️ Partially verified | Docker integration boots a real Postgres-backed stack in CI; the release still does not claim a separately audited production migration/deployment. |
 | Worker tests | ✅ Passing | `pytest`, 2 tests including a real Celery eager-mode task execution |
 | Frontend type check | ✅ Clean | `tsc --noEmit` |
 | Frontend lint | ✅ Clean | `eslint` |
 | Frontend component tests | ✅ Passing | `vitest` + Testing Library, 2 tests covering success and error paths |
 | Frontend production build | ✅ Succeeds | `vite build` |
-| Docker Compose YAML | ✅ Valid | Parsed with PyYAML |
+| Docker Compose YAML | ✅ Valid | Parsed in repository checks; compose configuration is exercised by integration CI |
 | Every Dockerfile's build context + COPY paths | ✅ Verified | Programmatically resolved against the real filesystem, not eyeballed |
 | Dockerfile best-practice linting (hadolint) | ⚠️ Not run | hadolint's release download wasn't reachable from this sandbox |
-| `docker compose up` end-to-end, all services healthy | ⚠️ Not verified here | No Docker daemon in this sandbox. **This is the one thing you need to confirm yourself — see below.** CI (`.github/workflows/ci.yml`, `docker-integration` job) runs this on every PR. |
+| `docker compose up` end-to-end, all services healthy | ✅ Verified in CI | GitHub Actions builds/starts Postgres, Redis, MinIO, API, worker, and frontend; waits for health; then smoke-tests the API. |
 
 ## Running it yourself
 
