@@ -4,7 +4,24 @@ All notable changes to this project are documented here. Format loosely follows 
 
 ## [Unreleased]
 
-Nothing yet. Next up is Milestone E1 (Core Detection Engineering) per `docs/ROADMAP.md`.
+Next up is Milestone E1 (Core Detection Engineering) per `docs/ROADMAP.md`.
+
+## [0.1.1] - 2026-10-16 - CI & Runtime Hardening
+
+### Changed
+- Upgraded backend dependency versions to resolve reported Python dependency CVEs.
+- Corrected the Trivy Action pin and added worker dependency vulnerability scanning.
+- Split Vitest configuration from Vite configuration so the Docker/TypeScript build checks all project configs cleanly.
+- Fixed frontend container health checks around IPv4/IPv6 localhost resolution.
+- Replaced broken MinIO image references with an available pinned release for integration CI.
+- Added engineering-decision documentation clarifying current tradeoffs and limitations.
+
+### Verification
+- Backend, worker, frontend, Trivy security scan, and full Docker integration jobs pass in GitHub Actions.
+- The Docker integration job builds and starts the complete stack, waits for service health, and smoke-tests the API.
+
+### Scope
+- This remains Milestone E0. Detection authoring, MITRE mapping, SIEM integrations, the AI assistant, and the research subsystem are still future work.
 
 ## [0.1.0] - 2026-07-14 - Milestone E0 (Foundations) + Release Audit
 
