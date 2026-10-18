@@ -113,26 +113,14 @@ jobs:
             echo "JWT_PUBLIC_KEY=$(awk 'BEGIN{ORS="\\n"} {print}' /tmp/ci_public.pem)"
           } > .env
 
-      - name: Build and start the full stack
+      - name: Build and wait for required services
         working-directory: infra
-        run: docker compose --env-file ../.env up -d --build
+        run: docker compose --env-file ../.env up -d --build --wait --wait-timeout 240 postgres redis api worker frontend
 
-      - name: Wait for all services to report healthy
-        run: |
-          for i in $(seq 1 30); do
-            unhealthy=$(docker ps --filter "health=unhealthy" --format '{{.Names}}')
-            starting=$(docker ps --filter "health=starting" --format '{{.Names}}')
-            if [ -z "$unhealthy" ] && [ -z "$starting" ]; then
-              echo "All services healthy."
-              exit 0
-            fi
-            echo "Waiting for services to become healthy (attempt $i)..."
-            sleep 5
-          done
-          echo "Services did not become healthy in time."
-          docker compose -f infra/docker-compose.yml ps
-          docker compose -f infra/docker-compose.yml logs
-          exit 1
+      - name: Capture logs on failure
+        if: failure()
+        working-directory: infra
+        run: docker compose --env-file ../.env logs --no-color --tail=150
 
       - name: Smoke test the API
         run: |
@@ -142,7 +130,7 @@ jobs:
       - name: Tear down
         if: always()
         working-directory: infra
-        run: docker compose down -v
+        run: docker compose --env-file ../.env down -v
 
   security-scan:
     runs-on: ubuntu-latest
