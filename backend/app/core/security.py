@@ -20,7 +20,7 @@ from typing import Any
 
 import jwt
 from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHash, VerifyMismatchError
+from argon2.exceptions import InvalidHash, VerificationError
 
 from app.core.config import Settings
 
@@ -41,7 +41,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     try:
         return _hasher.verify(hashed_password, plain_password)
-    except (VerifyMismatchError, InvalidHash):
+    except (VerificationError, InvalidHash):
         return False
 
 
@@ -93,6 +93,17 @@ def decode_access_token(token: str, *, settings: Settings) -> TokenPayload:
     )
     if claims.get("type") != "access":
         raise jwt.InvalidTokenError("not an access token")
+    # A valid signature does not make arbitrary claim values valid identities.
+    # Validate types and identifiers here so every caller gets the same
+    # InvalidTokenError contract, rather than an unhandled UUID/type error.
+    for name in ("sub", "role", "jti"):
+        if not isinstance(claims.get(name), str) or not claims[name].strip():
+            raise jwt.InvalidTokenError(f"invalid {name} claim")
+    try:
+        uuid.UUID(claims["sub"])
+        uuid.UUID(claims["jti"])
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise jwt.InvalidTokenError("invalid token identifier") from exc
     return TokenPayload(claims)
 
 
