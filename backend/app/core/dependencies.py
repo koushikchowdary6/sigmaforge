@@ -77,7 +77,14 @@ async def get_current_user(
 
     import uuid
 
-    user = await user_repo.get_by_id(uuid.UUID(claims.sub))
+    try:
+        user_id = uuid.UUID(claims.sub)
+    except (TypeError, ValueError, AttributeError):
+        # A correctly signed JWT can still contain a malformed subject.
+        # Treat it as invalid credentials rather than raising HTTP 500.
+        raise _generic_unauthorized() from None
+
+    user = await user_repo.get_by_id(user_id)
     if user is None or not user.is_active:
         raise _generic_unauthorized() from None
     return user
