@@ -44,7 +44,7 @@ def test_argon2_backend_verification_error_fails_closed(monkeypatch):
     def fail_verify(*args, **kwargs):
         raise VerificationError("malformed stored hash")
 
-    monkeypatch.setattr(security._hasher, "verify", fail_verify)
+    monkeypatch.setattr(type(security._hasher), "verify", fail_verify)
     assert security.verify_password("secret", "invalid-stored-hash") is False
 
 
