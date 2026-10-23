@@ -32,7 +32,7 @@ from app.auth.service import AuthService  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.core.database import db_manager  # noqa: E402
 from app.core.dependencies import get_auth_service, get_user_repository  # noqa: E402
-from app.core.security import hash_password  # noqa: E402
+from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models.rbac import Role  # noqa: E402
 from app.models.user import User  # noqa: E402
@@ -135,6 +135,23 @@ async def test_me_requires_bearer_token(app_and_repo):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/v1/auth/me")
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_signed_token_with_non_uuid_subject_returns_generic_401(app_and_repo):
+    """Malformed JWT claims must never escape as an unhandled 500."""
+    app, *_ = app_and_repo
+    token = create_access_token(
+        user_id="not-a-uuid", role="detection_engineer", settings=get_settings()
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
+        )
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Could not validate credentials"
+    assert resp.headers["www-authenticate"] == "Bearer"
 
 
 @pytest.mark.asyncio
