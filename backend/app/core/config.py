@@ -29,13 +29,13 @@ class Settings(BaseSettings):
     # --- Auth / JWT (RS256) ---
     jwt_private_key: str = Field(..., description="PEM-encoded RSA private key, used to sign access tokens")
     jwt_public_key: str = Field(..., description="PEM-encoded RSA public key, used to verify access tokens")
-    jwt_access_token_ttl_seconds: int = Field(default=900)  # 15 minutes
-    jwt_refresh_token_ttl_seconds: int = Field(default=60 * 60 * 24 * 14)  # 14 days
-    jwt_issuer: str = Field(default="sigmaforge")
+    jwt_access_token_ttl_seconds: int = Field(default=900, gt=0)  # 15 minutes
+    jwt_refresh_token_ttl_seconds: int = Field(default=60 * 60 * 24 * 14, gt=0)  # 14 days
+    jwt_issuer: str = Field(default="sigmaforge", min_length=1)
 
     # --- Account lockout ---
-    max_failed_login_attempts: int = Field(default=5)
-    lockout_duration_seconds: int = Field(default=15 * 60)
+    max_failed_login_attempts: int = Field(default=5, gt=0)
+    lockout_duration_seconds: int = Field(default=15 * 60, gt=0)
 
     # --- CORS (frontend origin, dev default only) ---
     cors_allow_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
