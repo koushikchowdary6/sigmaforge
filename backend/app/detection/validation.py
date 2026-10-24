@@ -16,6 +16,28 @@ _MAX_DRAFT_BYTES = 65536
 _SELECTOR_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _LOGSOURCE_KEYS = {"category", "product", "service", "definition"}
 
+_CONDITION_IDENTIFIERS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\*?")
+_CONDITION_KEYWORDS = {"and", "or", "not", "of", "all", "them"}
+
+
+def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
+    """Check basic Sigma boolean-condition references without claiming full parsing.
+
+    Aggregation pipelines require semantic parsing by pySigma and remain outside
+    structural preflight; this guard only handles ordinary selector expressions.
+    """
+    if "|" in condition:
+        return True
+    words = _CONDITION_IDENTIFIERS.findall(condition)
+    references = [word for word in words if word.lower() not in _CONDITION_KEYWORDS]
+    if not references and "them" not in (word.lower() for word in words):
+        return False
+    return all(
+        any(name.startswith(word[:-1]) for name in selectors)
+        if word.endswith("*") else word in selectors
+        for word in references
+    )
+
 
 def _valid_scalar(value: Any) -> bool:
     """Only JSON scalar Sigma field values; no nested objects or arrays."""
@@ -65,6 +87,9 @@ class RulePreflightRequest(BaseModel):
                    for item in conditions)
         ):
             raise ValueError("detection requires non-empty condition text")
+
+        if any(not _references_known_selectors(item, set(selectors)) for item in conditions):
+            raise ValueError("condition references an undefined selector")
 
         for name, selection in selectors.items():
             selections = selection if isinstance(selection, list) else [selection]
