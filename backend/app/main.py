@@ -63,7 +63,15 @@ def create_app() -> FastAPI:
                 "status": 422,
                 "detail": "One or more fields failed validation",
                 "instance": str(request.url.path),
-                "errors": exc.errors(),
+                # FastAPI/Pydantic errors can include the rejected input
+                # (including passwords and refresh tokens) and custom ctx
+                # objects. Never reflect either back to an HTTP client.
+                "errors": [
+                    {"loc": error.get("loc", ()),
+                     "type": error.get("type", "value_error"),
+                     "msg": "Invalid value"}
+                    for error in exc.errors()
+                ],
             },
         )
 
