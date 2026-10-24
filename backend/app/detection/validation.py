@@ -41,6 +41,20 @@ def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
     )
 
 
+
+def _valid_field_key(key: Any) -> bool:
+    """Reject malformed Sigma field-modifier chains without interpreting semantics.
+
+    Structural preflight does not claim to recognize supported pySigma
+    modifiers, but an empty field/modifier or punctuation in a modifier
+    cannot form a valid field expression.
+    """
+    if not isinstance(key, str) or not key or len(key) > 200:
+        return False
+    field, *modifiers = key.split("|")
+    return bool(field.strip()) and all(_SELECTOR_NAME.fullmatch(modifier) for modifier in modifiers)
+
+
 def _valid_scalar(value: Any) -> bool:
     """Only JSON scalar Sigma field values; no nested objects or arrays."""
     if value is None or isinstance(value, bool | int):
@@ -98,8 +112,7 @@ class RulePreflightRequest(BaseModel):
             if not selections or len(selections) > 64 or any(
                 not isinstance(item, dict) or not item
                 or any(
-                    not isinstance(key, str) or not key.strip() or len(key) > 200
-                    or not _valid_field_value(value)
+                    not _valid_field_key(key) or not _valid_field_value(value)
                     for key, value in item.items()
                 )
                 for item in selections
