@@ -16,7 +16,7 @@ _MAX_DRAFT_BYTES = 65536
 _SELECTOR_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _LOGSOURCE_KEYS = {"category", "product", "service", "definition"}
 
-_CONDITION_IDENTIFIERS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\\*?")
+_CONDITION_IDENTIFIERS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\*?")
 _CONDITION_KEYWORDS = {"and", "or", "not", "of", "all", "them"}
 
 
