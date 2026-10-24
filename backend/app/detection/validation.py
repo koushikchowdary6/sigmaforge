@@ -41,7 +41,6 @@ def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
     )
 
 
-
 def _valid_field_key(key: Any) -> bool:
     """Reject malformed Sigma field-modifier chains without interpreting semantics.
 
