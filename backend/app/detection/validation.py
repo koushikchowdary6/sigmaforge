@@ -26,9 +26,11 @@ def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
     Aggregation pipelines require semantic parsing by pySigma and remain outside
     structural preflight; this guard only handles ordinary selector expressions.
     """
-    if "|" in condition:
-        return True
-    words = _CONDITION_IDENTIFIERS.findall(condition)
+    # Aggregation syntax after "|" is not parsed by this structural guard,
+    # but the selector expression before it must still resolve. Otherwise
+    # typos such as "missing | count()" silently pass preflight.
+    selector_expression = condition.split("|", 1)[0]
+    words = _CONDITION_IDENTIFIERS.findall(selector_expression)
     references = [word for word in words if word.lower() not in _CONDITION_KEYWORDS]
     if not references and "them" not in (word.lower() for word in words):
         return False
