@@ -44,6 +44,16 @@ class SqlAlchemyUserRepository:
         await self._session.execute(update(User).where(User.id == user_id).values(locked_until=locked_until))
         await self._session.commit()
 
+    async def reset_expired_lockout(self, user_id: uuid.UUID, *, now: datetime) -> None:
+        # Compare and reset in one statement so an active lockout cannot be
+        # cleared by a stale request. Do not update last_login_at on failure.
+        await self._session.execute(
+            update(User)
+            .where(User.id == user_id, User.locked_until.is_not(None), User.locked_until <= now)
+            .values(failed_login_count=0, locked_until=None)
+        )
+        await self._session.commit()
+
 
 class SqlAlchemyRefreshTokenRepository:
     def __init__(self, session: AsyncSession) -> None:

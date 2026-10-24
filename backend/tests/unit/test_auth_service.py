@@ -5,6 +5,7 @@ these test the logic itself, fast and deterministically.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -93,6 +94,42 @@ class TestLogin:
         # Next attempt, even with the correct password, must be locked out.
         with pytest.raises(AccountLockedError):
             await svc.login(email="engineer@corp.com", password="correct-password")
+
+    @pytest.mark.asyncio
+    async def test_expired_lockout_starts_fresh_attempt_window(self, service, settings):
+        svc, user_repo, _ = service
+        user = make_user("engineer@corp.com", "correct-password")
+        user_repo.add(user)
+        for _ in range(settings.max_failed_login_attempts):
+            with pytest.raises(InvalidCredentialsError):
+                await svc.login(email=user.email, password="wrong")
+
+        assert user.locked_until is not None
+        user.locked_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+        with pytest.raises(InvalidCredentialsError):
+            await svc.login(email=user.email, password="still-wrong")
+
+        assert user.failed_login_count == 1
+        assert user.locked_until is None
+        assert user.last_login_at is None
+
+        await svc.login(email=user.email, password="correct-password")
+        assert user.failed_login_count == 0
+        assert user.last_login_at is not None
+
+    @pytest.mark.asyncio
+    async def test_active_lockout_never_resets_counter(self, service, settings):
+        svc, user_repo, _ = service
+        user = make_user("engineer@corp.com", "correct-password")
+        user_repo.add(user)
+        user.failed_login_count = settings.max_failed_login_attempts
+        user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=5)
+        with pytest.raises(AccountLockedError):
+            await svc.login(email=user.email, password="correct-password")
+        assert user.failed_login_count == settings.max_failed_login_attempts
+        assert user.locked_until is not None
+        assert user.last_login_at is None
 
     @pytest.mark.asyncio
     async def test_successful_login_resets_failed_count(self, service):
