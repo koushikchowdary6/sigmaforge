@@ -212,3 +212,37 @@ async def test_malformed_login_body_returns_rfc7807_shape():
     body = resp.json()
     assert body["type"] == "https://sigmaforge.dev/errors/validation-error"
     assert body["status"] == 422
+
+
+@pytest.mark.asyncio
+async def test_validation_errors_never_echo_passwords_or_rejected_email():
+    """Pydantic's raw errors include input; the public 422 response must not."""
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/api/v1/auth/login", json={
+            "email": "SENSITIVE_EMAIL_NOT_VALID",
+            "password": {"secret": "SENSITIVE_PASSWORD"},
+        })
+    assert resp.status_code == 422
+    assert "SENSITIVE_EMAIL_NOT_VALID" not in resp.text
+    assert "SENSITIVE_PASSWORD" not in resp.text
+    errors = resp.json()["errors"]
+    assert errors
+    assert all(set(error) == {"loc", "type", "msg"} for error in errors)
+    assert any(error["loc"][-1] == "password" for error in errors)
+    assert all(error["msg"] == "Invalid value" for error in errors)
+
+
+@pytest.mark.asyncio
+async def test_validation_errors_never_echo_refresh_token_payload():
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/api/v1/auth/refresh", json={
+            "refresh_token": {"nested": "SENSITIVE_REFRESH_TOKEN"},
+        })
+    assert resp.status_code == 422
+    assert "SENSITIVE_REFRESH_TOKEN" not in resp.text
+    assert any(error["loc"][-1] == "refresh_token"
+               for error in resp.json()["errors"])
