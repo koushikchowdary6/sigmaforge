@@ -78,8 +78,14 @@ class AuthService:
             verify_password(password, _DUMMY_HASH)
             raise InvalidCredentialsError("invalid credentials")
 
-        if user.locked_until is not None and user.locked_until > datetime.now(timezone.utc):
-            raise AccountLockedError("account locked")
+        now = datetime.now(timezone.utc)
+        if user.locked_until is not None:
+            if user.locked_until > now:
+                raise AccountLockedError("account locked")
+            # Expiration begins a fresh attempt window. Keeping the old count
+            # would re-lock the account after a single wrong password.
+            # This must not update last_login_at: no login has succeeded.
+            await self._users.reset_expired_lockout(user.id, now=now)
 
         if not user.is_active:
             raise InvalidCredentialsError("invalid credentials")
