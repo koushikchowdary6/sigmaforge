@@ -246,3 +246,77 @@ async def test_validation_errors_never_echo_refresh_token_payload():
     assert "SENSITIVE_REFRESH_TOKEN" not in resp.text
     assert any(error["loc"][-1] == "refresh_token"
                for error in resp.json()["errors"])
+
+
+@pytest.mark.asyncio
+async def test_rule_preflight_requires_auth(app_and_repo):
+    app, *_ = app_and_repo
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/rules/preflight", json={
+            "title": "Failed logins", "logsource": {"product": "windows"},
+            "detection": {"selection": {"EventID": 4625}, "condition": "selection"},
+        })
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_rule_preflight_validates_draft_without_persisting(app_and_repo):
+    app, *_ = app_and_repo
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        login = await client.post("/api/v1/auth/login", json={
+            "email": "engineer@corp.com", "password": "correct-horse-battery-staple",
+        })
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        response = await client.post("/api/v1/rules/preflight", headers=headers, json={
+            "title": "Failed logins", "logsource": {"product": "windows"},
+            "detection": {"selection": {"EventID": 4625}, "condition": "selection"},
+        })
+    assert response.status_code == 200
+    assert response.json() == {
+        "valid": True, "validation_level": "structural_only",
+        "selector_count": 1, "selector_names": ["selection"],
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("draft", [
+    {"title": "   ", "logsource": {"product": "windows"},
+     "detection": {"selection": {"EventID": 4625}, "condition": "selection"}},
+    {"title": "Example", "logsource": {"product": "windows"},
+     "detection": {"selection": {}, "condition": "selection"}},
+    {"title": "Example", "logsource": {"product": "windows"},
+     "detection": {"selection": {"EventID": 4625}, "condition": ""}},
+    {"title": "Example", "logsource": {"product": "windows"},
+     "detection": {"selection": {"EventID": 4625}, "condition": "selection"},
+     "secret": "SENSITIVE_REJECTED_INPUT"},
+])
+async def test_rule_preflight_rejects_invalid_drafts_without_echo(app_and_repo, draft):
+    app, *_ = app_and_repo
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        login = await client.post("/api/v1/auth/login", json={
+            "email": "engineer@corp.com", "password": "correct-horse-battery-staple",
+        })
+        response = await client.post(
+            "/api/v1/rules/preflight",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+            json=draft,
+        )
+    assert response.status_code == 422
+    assert "SENSITIVE_REJECTED_INPUT" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_rule_preflight_denies_analyst_role(app_and_repo):
+    app, _user_repo, _refresh_repo, user = app_and_repo
+    user.role = Role(id=4, name="analyst")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        login = await client.post("/api/v1/auth/login", json={
+            "email": "engineer@corp.com", "password": "correct-horse-battery-staple",
+        })
+        response = await client.post(
+            "/api/v1/rules/preflight",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+            json={"title": "Example", "logsource": {"product": "windows"},
+                  "detection": {"selection": {"EventID": 4625}, "condition": "selection"}},
+        )
+    assert response.status_code == 403

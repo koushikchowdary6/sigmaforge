@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.database import db_manager
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import RequestLoggingMiddleware, SecurityHeadersMiddleware
+from app.detection.router import router as detection_router
 
 logger = get_logger("app.main")
 
@@ -93,6 +94,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(detection_router, prefix="/api/v1")
 
     return app
 
