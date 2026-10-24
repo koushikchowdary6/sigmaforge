@@ -19,7 +19,7 @@ _LOGSOURCE_KEYS = {"category", "product", "service", "definition"}
 
 def _valid_scalar(value: Any) -> bool:
     """Only JSON scalar Sigma field values; no nested objects or arrays."""
-    if value is None or isinstance(value, (bool, int)):
+    if value is None or isinstance(value, bool | int):
         return True
     if isinstance(value, float):
         return math.isfinite(value)
