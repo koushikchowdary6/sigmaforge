@@ -46,12 +46,7 @@ def test_supported_boolean_subset_remains_valid(condition):
     "selection_login or ()",
     "0 of them",
     "selection_*",
-    "selection_login | count() and invalid &&",
 ])
 def test_malformed_boolean_conditions_are_rejected(condition):
-    # Aggregation syntax after the pipe is deliberately out of scope; the
-    # malformed pre-pipe examples must fail rather than pass reference checks.
-    if condition == "selection_login | count() and invalid &&":
-        pytest.skip("aggregation syntax is deferred to pySigma")
     with pytest.raises(ValidationError):
         RulePreflightRequest.model_validate(draft(condition))
