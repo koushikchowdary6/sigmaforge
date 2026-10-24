@@ -11,7 +11,7 @@ This repository is under active, incremental development. **Current release: v0.
 ## What's actually built (Milestone E0)
 
 - **Auth**: login, refresh-token rotation with reuse detection, logout, logout-all, RBAC (5 roles: admin, detection_lead, detection_engineer, analyst, researcher)
-- **API**: FastAPI service with structured logging, security headers, RFC 7807 error responses, `/healthz` and `/readyz`\n- **E1 foundation**: authenticated `POST /api/v1/rules/preflight` validates bounded JSON Sigma draft structure (title, logsource, detection selectors and condition) with `rule:create` RBAC. This is structural preflight only, **not** pySigma schema validation, persistence, conversion, or execution.
+- **API**: FastAPI service with structured logging, security headers, RFC 7807 error responses, `/healthz` and `/readyz`\n- **E1 foundation**: authenticated `POST /api/v1/rules/preflight` validates bounded JSON Sigma draft structure (title, logsource, detection selectors, field-modifier syntax, and condition references) with `rule:create` RBAC. This is structural preflight only, **not** pySigma schema validation, persistence, conversion, or execution.
 - **Worker**: Celery app wired to Redis, one real task (`ping`) proving the broker round-trip
 - **Frontend**: React + TypeScript login flow against the real auth API
 - **Database**: full initial migration for the production schema (19 tables, `docs/DATABASE_SCHEMA.md` §1–2.19), RBAC seed data
