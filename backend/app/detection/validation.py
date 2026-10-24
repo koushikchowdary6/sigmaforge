@@ -6,6 +6,7 @@ execution. It rejects malformed drafts early before E1 rule persistence.
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any
 
@@ -14,6 +15,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 _MAX_DRAFT_BYTES = 65536
 _SELECTOR_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _LOGSOURCE_KEYS = {"category", "product", "service", "definition"}
+
+
+def _valid_scalar(value: Any) -> bool:
+    """Only JSON scalar Sigma field values; no nested objects or arrays."""
+    if value is None or isinstance(value, bool | int):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return isinstance(value, str) and len(value) <= 2048
+
+
+def _valid_field_value(value: Any) -> bool:
+    if isinstance(value, list):
+        return 1 <= len(value) <= 64 and all(_valid_scalar(item) for item in value)
+    return _valid_scalar(value)
 
 
 class RulePreflightRequest(BaseModel):
@@ -54,7 +70,11 @@ class RulePreflightRequest(BaseModel):
             selections = selection if isinstance(selection, list) else [selection]
             if not selections or len(selections) > 64 or any(
                 not isinstance(item, dict) or not item
-                or any(not isinstance(key, str) or not key.strip() for key in item)
+                or any(
+                    not isinstance(key, str) or not key.strip() or len(key) > 200
+                    or not _valid_field_value(value)
+                    for key, value in item.items()
+                )
                 for item in selections
             ):
                 raise ValueError(f"invalid selection mapping: {name}")
