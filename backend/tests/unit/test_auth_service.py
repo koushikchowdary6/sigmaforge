@@ -225,3 +225,44 @@ class TestLogout:
             await svc.refresh(raw_refresh_token=pair_a.refresh_token)
         with pytest.raises(RefreshTokenInvalidError):
             await svc.refresh(raw_refresh_token=pair_b.refresh_token)
+
+
+@pytest.mark.asyncio
+async def test_blocked_accounts_perform_dummy_password_verification(service, monkeypatch):
+    """Locked, inactive, and unknown users must take the Argon2 verification path.
+
+    Timing cannot be guaranteed in unit tests, but skipping password hashing
+    for known blocked accounts would leak account state through latency.
+    """
+    from app.auth import service as auth_module
+
+    svc, user_repo, _ = service
+    locked = make_user("locked@corp.com", "locked-secret")
+    locked.failed_login_count = 3
+    locked.locked_until = datetime.now(timezone.utc) + timedelta(minutes=10)
+    inactive = make_user("inactive@corp.com", "inactive-secret")
+    inactive.is_active = False
+    active = make_user("active@corp.com", "active-secret")
+    for user in (locked, inactive, active):
+        user_repo.add(user)
+
+    original_verify = auth_module.verify_password
+    checked_hashes = []
+
+    def record_verification(password, hashed_password):
+        checked_hashes.append(hashed_password)
+        return original_verify(password, hashed_password)
+
+    monkeypatch.setattr(auth_module, "verify_password", record_verification)
+
+    for email in ("unknown@corp.com", locked.email, inactive.email, active.email):
+        with pytest.raises(InvalidCredentialsError):
+            await svc.login(email=email, password="incorrect-password")
+
+    assert len(checked_hashes) == 4
+    assert checked_hashes[:3] == [auth_module._DUMMY_HASH] * 3
+    assert checked_hashes[3] == active.hashed_password
+    assert locked.failed_login_count == 3
+    assert locked.locked_until is not None
+    assert inactive.failed_login_count == 0
+    assert inactive.last_login_at is None

@@ -81,6 +81,10 @@ class AuthService:
         now = datetime.now(timezone.utc)
         if user.locked_until is not None:
             if user.locked_until > now:
+                # Do equivalent Argon2 work for locked and unknown accounts.
+                # Skipping password verification here makes lockout status
+                # distinguishable through response latency.
+                verify_password(password, _DUMMY_HASH)
                 raise AccountLockedError("account locked")
             # Expiration begins a fresh attempt window. Keeping the old count
             # would re-lock the account after a single wrong password.
@@ -88,6 +92,9 @@ class AuthService:
             await self._users.reset_expired_lockout(user.id, now=now)
 
         if not user.is_active:
+            # Disabled accounts must not reveal their existence via a
+            # faster response than an unknown or wrong-password account.
+            verify_password(password, _DUMMY_HASH)
             raise InvalidCredentialsError("invalid credentials")
 
         if not verify_password(password, user.hashed_password):
