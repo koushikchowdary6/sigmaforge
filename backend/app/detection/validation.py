@@ -18,7 +18,7 @@ _LOGSOURCE_KEYS = {"category", "product", "service", "definition"}
 
 _CONDITION_IDENTIFIERS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\*?")
 _CONDITION_KEYWORDS = {"and", "or", "not", "of", "all", "them"}
-_CONDITION_TOKENS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\\*?|[0-9]+|[()]")  # lexical subset
+_CONDITION_TOKENS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\*?|[0-9]+|[()]")  # lexical subset
 
 
 def _well_formed_boolean_condition(condition: str) -> bool:
