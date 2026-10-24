@@ -44,6 +44,12 @@ class FakeUserRepository:
     async def set_locked_until(self, user_id: uuid.UUID, locked_until: datetime | None) -> None:
         self.users[user_id].locked_until = locked_until
 
+    async def reset_expired_lockout(self, user_id: uuid.UUID, *, now: datetime) -> None:
+        user = self.users[user_id]
+        if user.locked_until is not None and user.locked_until <= now:
+            user.failed_login_count = 0
+            user.locked_until = None
+
 
 class FakeRefreshTokenRepository:
     def __init__(self) -> None:
