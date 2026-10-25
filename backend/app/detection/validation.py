@@ -94,6 +94,19 @@ def _well_formed_boolean_condition(condition: str) -> bool:
     return disjunction() and index == len(tokens)
 
 
+def _valid_aggregation_boundary(condition: str) -> bool:
+    """Reject empty or repeated aggregation pipes without parsing pySigma semantics.
+
+    A condition may have one aggregation segment after its boolean selector
+    expression. An empty suffix (or a second pipe) is an incomplete draft,
+    not a meaningful aggregation to defer to semantic validation.
+    """
+    if "|" not in condition:
+        return True
+    before, _, after = condition.partition("|")
+    return bool(before.strip() and after.strip()) and "|" not in after
+
+
 def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
     """Check basic Sigma boolean-condition references without claiming full parsing.
 
@@ -204,6 +217,8 @@ class RulePreflightRequest(BaseModel):
 
         if any(not _references_known_selectors(item, set(selectors)) for item in conditions):
             raise ValueError("condition references an undefined selector")
+        if any(not _valid_aggregation_boundary(item) for item in conditions):
+            raise ValueError("condition has malformed aggregation boundary")
         if any(not _well_formed_boolean_condition(item) for item in conditions):
             raise ValueError("condition has malformed boolean syntax")
         if any(not _feasible_quantifiers(item, set(selectors)) for item in conditions):

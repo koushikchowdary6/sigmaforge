@@ -47,3 +47,22 @@ def test_aggregation_tokens_are_not_mistaken_for_selector_references():
     assert RulePreflightRequest.model_validate(
         draft("selection_login | count() by Computer > 5")
     ).selector_names
+
+
+@pytest.mark.parametrize("condition", [
+    "selection_login |",
+    "selection_login |   ",
+    "selection_login | count() |",
+    "selection_login | count() | count()",
+    ["selection_login", "selection_logout |"],
+])
+def test_incomplete_or_repeated_aggregation_separators_are_rejected(condition):
+    with pytest.raises(ValidationError, match="malformed aggregation boundary"):
+        RulePreflightRequest.model_validate(draft(condition))
+
+
+def test_single_aggregation_segment_remains_supported():
+    parsed = RulePreflightRequest.model_validate(
+        draft("selection_login | count() by Computer > 5")
+    )
+    assert parsed.selector_names == ["selection_login", "selection_logout"]
