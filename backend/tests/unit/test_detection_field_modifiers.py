@@ -38,6 +38,27 @@ def test_rejects_empty_or_malformed_modifier_segments(field):
         RulePreflightRequest.model_validate(draft(field))
 
 
+@pytest.mark.parametrize("field", [
+    " CommandLine", "CommandLine ", "CommandLine\nInjected",
+    "CommandLine\tInjected", "CommandLine\x00Injected",
+    "CommandLine\u202eInjected",  # bidi override
+    "CommandLine\u200bInjected",  # invisible format separator
+    "CommandLine\ud800Injected",  # isolated surrogate
+])
+def test_rejects_obfuscated_or_ambiguous_field_names(field):
+    with pytest.raises(ValidationError, match="invalid selection mapping"):
+        RulePreflightRequest.model_validate(draft(field))
+
+
+@pytest.mark.parametrize("field", [
+    "winlog.event_data.CommandLine",
+    "User-Agent",
+    "Field With Spaces|contains",
+])
+def test_keeps_legitimate_field_names_with_punctuation(field):
+    assert RulePreflightRequest.model_validate(draft(field)).selector_names == ["selection"]
+
+
 def test_does_not_claim_semantic_modifier_validation():
     # Unknown but structurally shaped modifiers remain pySigma's responsibility.
     assert RulePreflightRequest.model_validate(
