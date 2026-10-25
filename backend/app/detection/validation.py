@@ -215,10 +215,10 @@ class RulePreflightRequest(BaseModel):
         ):
             raise ValueError("detection requires non-empty condition text")
 
-        if any(not _valid_aggregation_boundary(item) for item in conditions):
-            raise ValueError("condition has malformed aggregation boundary")
         if any(not _references_known_selectors(item, set(selectors)) for item in conditions):
             raise ValueError("condition references an undefined selector")
+        if any(not _valid_aggregation_boundary(item) for item in conditions):
+            raise ValueError("condition has malformed aggregation boundary")
         if any(not _well_formed_boolean_condition(item) for item in conditions):
             raise ValueError("condition has malformed boolean syntax")
         if any(not _feasible_quantifiers(item, set(selectors)) for item in conditions):
