@@ -168,6 +168,21 @@ def _feasible_quantifiers(condition: str, selectors: set[str]) -> bool:
     return True
 
 
+def _invisible_field_character(char: str) -> bool:
+    """Flag characters that can hide or split field identifiers in rule review.
+
+    Do not reject ordinary combining accents; only known invisible marks,
+    format/control characters, and Unicode line/paragraph separators.
+    """
+    category = unicodedata.category(char)
+    return (
+        category in {"Cc", "Cf", "Cs", "Zl", "Zp"}
+        or char == "\u034f"  # Combining grapheme joiner
+        or "\ufe00" <= char <= "\ufe0f"  # Variation selectors
+        or "\U000e0100" <= char <= "\U000e01ef"
+    )
+
+
 def _valid_field_key(key: Any) -> bool:
     """Reject malformed Sigma field-modifier chains without interpreting semantics.
 
@@ -184,7 +199,7 @@ def _valid_field_key(key: Any) -> bool:
     return (
         bool(field)
         and field == field.strip()
-        and not any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} for char in field)
+        and not any(_invisible_field_character(char) for char in field)
         and all(_SELECTOR_NAME.fullmatch(modifier) for modifier in modifiers)
     )
 
