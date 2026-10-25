@@ -18,6 +18,80 @@ _LOGSOURCE_KEYS = {"category", "product", "service", "definition"}
 
 _CONDITION_IDENTIFIERS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\*?")
 _CONDITION_KEYWORDS = {"and", "or", "not", "of", "all", "them"}
+_CONDITION_TOKENS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\*?|[0-9]+|[()]")  # lexical subset
+
+
+def _well_formed_boolean_condition(condition: str) -> bool:
+    """Parse the basic selector/and/or/not/quantifier subset before an aggregation.
+
+    This is intentionally not pySigma semantic validation. Reject broken
+    expressions (including punctuation silently skipped by a regex scan)
+    without interpreting aggregation pipelines after the first pipe.
+    """
+    expression = condition.split("|", 1)[0]
+    matches = list(_CONDITION_TOKENS.finditer(expression))
+    if not matches:
+        return False
+    offset = 0
+    tokens = []
+    for match in matches:
+        if expression[offset:match.start()].strip():
+            return False
+        tokens.append(match.group())
+        offset = match.end()
+    if expression[offset:].strip():
+        return False
+
+    index = 0
+
+    def atom() -> bool:
+        nonlocal index
+        if index >= len(tokens):
+            return False
+        token = tokens[index]
+        index += 1
+        lower = token.lower()
+        if lower == "not":
+            return atom()
+        if token == "(":
+            if not disjunction() or index >= len(tokens) or tokens[index] != ")":
+                return False
+            index += 1
+            return True
+        if lower == "all" or token.isdigit():
+            if token.isdigit() and int(token) < 1:
+                return False
+            if index + 1 >= len(tokens) or tokens[index].lower() != "of":
+                return False
+            index += 1
+            target = tokens[index]
+            index += 1
+            return target.lower() == "them" or bool(_SELECTOR_NAME.fullmatch(target.rstrip("*")))
+        if lower in _CONDITION_KEYWORDS or token == ")" or token.endswith("*"):
+            return False
+        return bool(_SELECTOR_NAME.fullmatch(token))
+
+    def conjunction() -> bool:
+        nonlocal index
+        if not atom():
+            return False
+        while index < len(tokens) and tokens[index].lower() == "and":
+            index += 1
+            if not atom():
+                return False
+        return True
+
+    def disjunction() -> bool:
+        nonlocal index
+        if not conjunction():
+            return False
+        while index < len(tokens) and tokens[index].lower() == "or":
+            index += 1
+            if not conjunction():
+                return False
+        return True
+
+    return disjunction() and index == len(tokens)
 
 
 def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
@@ -105,6 +179,8 @@ class RulePreflightRequest(BaseModel):
 
         if any(not _references_known_selectors(item, set(selectors)) for item in conditions):
             raise ValueError("condition references an undefined selector")
+        if any(not _well_formed_boolean_condition(item) for item in conditions):
+            raise ValueError("condition has malformed boolean syntax")
 
         for name, selection in selectors.items():
             selections = selection if isinstance(selection, list) else [selection]
