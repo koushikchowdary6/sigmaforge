@@ -13,6 +13,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _MAX_DRAFT_BYTES = 65536
+_MAX_CONDITION_NESTING = 64
+# Structural subset of Sigma timeframe durations; semantic validity is deferred.
+_TIMEFRAME = re.compile(r"^[1-9][0-9]{0,5}(?:s|m|h|d|w|M|y)$")
 _SELECTOR_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _LOGSOURCE_KEYS = {"category", "product", "service", "definition"}
 
@@ -29,6 +32,20 @@ def _well_formed_boolean_condition(condition: str) -> bool:
     without interpreting aggregation pipelines after the first pipe.
     """
     expression = condition.split("|", 1)[0]
+    # Bound recursive-descent depth for untrusted rule drafts. The maximum
+    # input length alone does not guarantee a shallow parse tree.
+    depth = 0
+    for char in expression:
+        if char == "(":
+            depth += 1
+            if depth > _MAX_CONDITION_NESTING:
+                return False
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    if depth:
+        return False
     matches = list(_CONDITION_TOKENS.finditer(expression))
     if not matches:
         return False
@@ -197,7 +214,16 @@ class RulePreflightRequest(BaseModel):
         ):
             raise ValueError("invalid logsource field")
 
-        selectors = {name: value for name, value in self.detection.items() if name != "condition"}
+        timeframe = self.detection.get("timeframe")
+        if "timeframe" in self.detection and (
+            not isinstance(timeframe, str) or not _TIMEFRAME.fullmatch(timeframe)
+        ):
+            raise ValueError("timeframe must be a bounded Sigma duration")
+
+        selectors = {
+            name: value for name, value in self.detection.items()
+            if name not in {"condition", "timeframe"}
+        }
         if not selectors or len(selectors) > 64:
             raise ValueError("detection requires 1 to 64 selectors")
         if any(
@@ -242,4 +268,4 @@ class RulePreflightRequest(BaseModel):
 
     @property
     def selector_names(self) -> list[str]:
-        return sorted(name for name in self.detection if name != "condition")
+        return sorted(name for name in self.detection if name not in {"condition", "timeframe"})
