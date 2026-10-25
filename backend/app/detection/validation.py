@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import unicodedata
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -177,7 +178,15 @@ def _valid_field_key(key: Any) -> bool:
     if not isinstance(key, str) or not key or len(key) > 200:
         return False
     field, *modifiers = key.split("|")
-    return bool(field.strip()) and all(_SELECTOR_NAME.fullmatch(modifier) for modifier in modifiers)
+    # Keep legitimate field names with internal spaces or punctuation, but
+    # reject hidden controls, bidi overrides, and ambiguous edge whitespace.
+    # Such names are hard to review safely in a detection-rule editor.
+    return (
+        bool(field)
+        and field == field.strip()
+        and not any(unicodedata.category(char) in {"Cc", "Cf", "Cs"} for char in field)
+        and all(_SELECTOR_NAME.fullmatch(modifier) for modifier in modifiers)
+    )
 
 
 def _valid_scalar(value: Any) -> bool:
