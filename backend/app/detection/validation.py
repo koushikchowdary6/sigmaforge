@@ -183,6 +183,15 @@ def _invisible_field_character(char: str) -> bool:
     )
 
 
+def _valid_metadata_text(value: str) -> bool:
+    """Reject invisible or ambiguous text in reviewer-facing rule metadata."""
+    return (
+        bool(value.strip())
+        and value == value.strip()
+        and not any(_invisible_field_character(char) for char in value)
+    )
+
+
 def _valid_field_key(key: Any) -> bool:
     """Reject malformed Sigma field-modifier chains without interpreting semantics.
 
@@ -228,12 +237,12 @@ class RulePreflightRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_structure(self) -> RulePreflightRequest:
-        if not self.title.strip():
-            raise ValueError("title must not be blank")
+        if not _valid_metadata_text(self.title):
+            raise ValueError("title must not contain invisible characters or edge whitespace")
         if not self.logsource or not ({"category", "product", "service"} & self.logsource.keys()):
             raise ValueError("logsource requires category, product, or service")
         if any(
-            key not in _LOGSOURCE_KEYS or not value.strip() or len(value) > 200
+            key not in _LOGSOURCE_KEYS or not _valid_metadata_text(value) or len(value) > 200
             for key, value in self.logsource.items()
         ):
             raise ValueError("invalid logsource field")
