@@ -115,6 +115,28 @@ def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
     )
 
 
+def _feasible_quantifiers(condition: str, selectors: set[str]) -> bool:
+    """Reject numeric 'N of ...' requests with too few matching selectors.
+
+    This only checks the count of declared selector names, not pySigma
+    aggregation or full rule semantics. Impossible counts cannot match.
+    """
+    tokens = _CONDITION_TOKENS.findall(condition.split("|", 1)[0])
+    for index in range(len(tokens) - 2):
+        count, operator, target = tokens[index:index + 3]
+        if not count.isdigit() or operator.lower() != "of":
+            continue
+        if target.lower() == "them":
+            available = len(selectors)
+        elif target.endswith("*"):
+            available = sum(name.startswith(target[:-1]) for name in selectors)
+        else:
+            available = int(target in selectors)
+        if int(count) > available:
+            return False
+    return True
+
+
 def _valid_field_key(key: Any) -> bool:
     """Reject malformed Sigma field-modifier chains without interpreting semantics.
 
@@ -165,7 +187,10 @@ class RulePreflightRequest(BaseModel):
         selectors = {name: value for name, value in self.detection.items() if name != "condition"}
         if not selectors or len(selectors) > 64:
             raise ValueError("detection requires 1 to 64 selectors")
-        if any(not _SELECTOR_NAME.fullmatch(name) for name in selectors):
+        if any(
+            not _SELECTOR_NAME.fullmatch(name) or name.lower() in _CONDITION_KEYWORDS
+            for name in selectors
+        ):
             raise ValueError("invalid selector name")
 
         condition = self.detection.get("condition")
@@ -181,6 +206,8 @@ class RulePreflightRequest(BaseModel):
             raise ValueError("condition references an undefined selector")
         if any(not _well_formed_boolean_condition(item) for item in conditions):
             raise ValueError("condition has malformed boolean syntax")
+        if any(not _feasible_quantifiers(item, set(selectors)) for item in conditions):
+            raise ValueError("condition quantifier exceeds matching selectors")
 
         for name, selection in selectors.items():
             selections = selection if isinstance(selection, list) else [selection]
