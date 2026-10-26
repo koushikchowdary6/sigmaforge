@@ -219,7 +219,14 @@ def _valid_scalar(value: Any) -> bool:
         return True
     if isinstance(value, float):
         return math.isfinite(value)
-    return isinstance(value, str) and len(value) <= 2048
+    # JSON may legally escape a lone UTF-16 surrogate (\\ud800), but it is
+    # not valid UTF-8. Without this guard the final byte-size check raises
+    # UnicodeEncodeError and a malformed draft becomes a server error.
+    return (
+        isinstance(value, str)
+        and len(value) <= 2048
+        and not any(unicodedata.category(char) == "Cs" for char in value)
+    )
 
 
 def _valid_field_value(value: Any) -> bool:
