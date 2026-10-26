@@ -281,6 +281,17 @@ class RulePreflightRequest(BaseModel):
         ):
             raise ValueError("detection requires non-empty condition text")
 
+        # The boolean parser examines only the part before an aggregation
+        # pipe. Validate the entire condition first: a hidden bidi control
+        # or lone UTF-16 surrogate in the suffix could otherwise bypass the
+        # parser, mislead reviewers, or raise UnicodeEncodeError during the
+        # final UTF-8 size check. Preserve ordinary multiline formatting.
+        if any(
+            _invisible_field_character(char) and char not in "\\t\\n\\r"
+            for item in conditions for char in item
+        ):
+            raise ValueError("condition contains invisible or invalid Unicode")
+
         if any(not _references_known_selectors(item, set(selectors)) for item in conditions):
             raise ValueError("condition references an undefined selector")
         if any(not _valid_aggregation_boundary(item) for item in conditions):
