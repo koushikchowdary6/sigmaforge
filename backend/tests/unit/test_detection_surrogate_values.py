@@ -24,11 +24,11 @@ def _draft(value):
 
 
 @pytest.mark.parametrize("value", [
-    "\\ud800",  # lone high surrogate
-    "\\udfff",  # lone low surrogate
-    "prefix\\ud800suffix",
-    ["safe", "\\udc00"],
-    ["\\ud800", "safe"],
+    "\ud800",  # lone high surrogate
+    "\udfff",  # lone low surrogate
+    "prefix\ud800suffix",
+    ["safe", "\udc00"],
+    ["\ud800", "safe"],
 ])
 def test_rejects_surrogate_scalar_and_list_values(value):
     # JSON decoding does not reject escaped lone surrogates, so a request can
@@ -41,7 +41,7 @@ def test_rejects_surrogate_scalar_and_list_values(value):
 @pytest.mark.parametrize("value", [
     "Détection — 安全",
     "emoji 🔒",
-    "line\\nfeed",
+    "line\nfeed",
     "plain text",
     ["normal", "café", "🔍"],
 ])
