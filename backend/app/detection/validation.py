@@ -287,7 +287,7 @@ class RulePreflightRequest(BaseModel):
         # parser, mislead reviewers, or raise UnicodeEncodeError during the
         # final UTF-8 size check. Preserve ordinary multiline formatting.
         if any(
-            _invisible_field_character(char) and char not in "\\t\\n\\r"
+            _invisible_field_character(char) and char not in "\t\n\r"
             for item in conditions for char in item
         ):
             raise ValueError("condition contains invisible or invalid Unicode")
