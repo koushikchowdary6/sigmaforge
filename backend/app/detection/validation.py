@@ -171,12 +171,15 @@ def _feasible_quantifiers(condition: str, selectors: set[str]) -> bool:
 def _invisible_field_character(char: str) -> bool:
     """Flag characters that can hide or split field identifiers in rule review.
 
-    Do not reject ordinary combining accents; only known invisible marks,
-    format/control characters, and Unicode line/paragraph separators.
+    Do not reject ordinary combining accents or plain ASCII spaces.
+    Non-ASCII Unicode space separators (such as NBSP and thin space) can
+    look like regular spaces while parsing differently in downstream Sigma
+    tooling; reject them in reviewer-facing identifiers and conditions.
     """
     category = unicodedata.category(char)
     return (
         category in {"Cc", "Cf", "Cs", "Zl", "Zp"}
+        or (category == "Zs" and char != " ")
         or char == "\u034f"  # Combining grapheme joiner
         or "\ufe00" <= char <= "\ufe0f"  # Variation selectors
         or "\U000e0100" <= char <= "\U000e01ef"
