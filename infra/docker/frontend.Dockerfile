@@ -6,8 +6,10 @@
 # --- Build stage ---
 FROM node:22-slim AS build
 WORKDIR /app
-COPY frontend/package.json ./
-RUN npm install --no-audit --no-fund
+# Install from the committed lockfile so Rollup's platform-specific
+# optional native package is resolved reproducibly in the Linux build image.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --include=optional --no-audit --no-fund
 COPY frontend/. .
 RUN npm run build
 
