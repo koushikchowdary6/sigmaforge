@@ -44,3 +44,15 @@ def test_legitimate_unicode_metadata_and_spaces_remain_valid():
     payload["logsource"]["product"] = "windows"
     payload["logsource"]["definition"] = "Windows process creation events"
     assert RulePreflightRequest.model_validate(payload).selector_names == ["selection"]
+
+
+@pytest.mark.parametrize("invisible", ["\u0301", "\u0301\u0300", "\u20dd"])
+@pytest.mark.parametrize("field", ["title", "logsource"])
+def test_standalone_combining_marks_are_not_visible_metadata(field, invisible):
+    payload = draft()
+    if field == "title":
+        payload["title"] = invisible
+    else:
+        payload["logsource"]["product"] = invisible
+    with pytest.raises(ValidationError, match="invisible characters") if field == "title" else pytest.raises(ValidationError, match="invalid logsource"):
+        RulePreflightRequest.model_validate(payload)
