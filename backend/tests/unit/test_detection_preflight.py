@@ -48,7 +48,7 @@ def test_accepts_sigma_selector_list_of_mappings():
 
 @pytest.mark.parametrize("value", [
     10 ** 5000, -(10 ** 5000), 2 ** 4096, [10 ** 5000],
-])
+], ids=["huge-positive", "huge-negative", "over-bit-limit", "huge-in-list"])
 def test_rejects_extreme_integer_values_before_json_serialization(value):
     # These can trigger Python's int-to-decimal conversion limit in
     # json.dumps, which must not turn a malformed rule into an HTTP 500.
