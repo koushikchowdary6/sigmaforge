@@ -276,6 +276,13 @@ class RulePreflightRequest(BaseModel):
         ):
             raise ValueError("invalid logsource field")
 
+        # The existing detection_rules.log_source column is VARCHAR(100).
+        # Reject oversize values at the API boundary rather than failing
+        # midway through a database transaction with a server error.
+        if any(len(self.logsource[key]) > 100 for key in ("product", "category", "service")
+               if key in self.logsource):
+            raise ValueError("logsource identifier exceeds 100 characters")
+
         timeframe = self.detection.get("timeframe")
         if "timeframe" in self.detection and (
             not isinstance(timeframe, str) or not _TIMEFRAME.fullmatch(timeframe)
