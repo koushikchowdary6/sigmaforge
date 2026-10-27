@@ -122,7 +122,10 @@ def _valid_aggregation_boundary(condition: str) -> bool:
     if "|" not in condition:
         return True
     before, _, after = condition.partition("|")
-    return bool(before.strip() and after.strip()) and "|" not in after
+    # A suffix made entirely of combining marks can pass str.strip() even
+    # though it contains no readable aggregation expression. This is always
+    # an incomplete draft, regardless of future pySigma grammar support.
+    return bool(before.strip() and after.strip()) and _has_visible_character(after) and "|" not in after
 
 
 def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
