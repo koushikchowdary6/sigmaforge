@@ -186,10 +186,19 @@ def _invisible_field_character(char: str) -> bool:
     )
 
 
+def _has_visible_character(value: str) -> bool:
+    """Require a visible base character, not just standalone combining marks."""
+    return any(
+        not char.isspace() and not unicodedata.category(char).startswith(("C", "M"))
+        for char in value
+    )
+
+
 def _valid_metadata_text(value: str) -> bool:
     """Reject invisible or ambiguous text in reviewer-facing rule metadata."""
     return (
         bool(value.strip())
+        and _has_visible_character(value)
         and value == value.strip()
         and not any(_invisible_field_character(char) for char in value)
     )
@@ -210,6 +219,7 @@ def _valid_field_key(key: Any) -> bool:
     # Such names are hard to review safely in a detection-rule editor.
     return (
         bool(field)
+        and _has_visible_character(field)
         and field == field.strip()
         and not any(_invisible_field_character(char) for char in field)
         and all(_SELECTOR_NAME.fullmatch(modifier) for modifier in modifiers)

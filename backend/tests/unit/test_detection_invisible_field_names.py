@@ -46,3 +46,9 @@ def test_legitimate_identifiers_remain_supported(field):
     assert RulePreflightRequest.model_validate(draft(field)).selector_names == [
         "selection"
     ]
+
+
+@pytest.mark.parametrize("field", ["\u0301", "\u0301\u0300", "\u20dd"])
+def test_standalone_combining_marks_are_not_valid_field_names(field):
+    with pytest.raises(ValidationError, match="invalid selection mapping"):
+        RulePreflightRequest.model_validate(draft(field))
