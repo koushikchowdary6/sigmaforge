@@ -218,8 +218,14 @@ def _valid_field_key(key: Any) -> bool:
 
 def _valid_scalar(value: Any) -> bool:
     """Only JSON scalar Sigma field values; no nested objects or arrays."""
-    if value is None or isinstance(value, bool | int):
+    if value is None or isinstance(value, bool):
         return True
+    if isinstance(value, int):
+        # Python 3.11+ rejects decimal serialization of extremely large ints
+        # (normally >4300 digits). A malicious JSON/Python draft must fail
+        # preflight with a validation error, not a 500 during json.dumps.
+        # 4096 bits still permits identifiers much wider than 64/128 bits.
+        return value.bit_length() <= 4096
     if isinstance(value, float):
         return math.isfinite(value)
     # JSON may legally escape a lone UTF-16 surrogate (\\ud800), but it is
