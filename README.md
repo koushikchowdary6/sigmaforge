@@ -8,16 +8,17 @@
 
 This repository is under active, incremental development. **Current release: v0.1.1 (CI & runtime hardening).** Status below is accurate as of the current commit — not aspirational.
 
-## What's actually built (Milestone E0)
+## What's actually built (E0 + initial E1 draft authoring)
 
 - **Auth**: login, refresh-token rotation with reuse detection, logout, logout-all, RBAC (5 roles: admin, detection_lead, detection_engineer, analyst, researcher)
-- **API**: FastAPI service with structured logging, security headers, RFC 7807 error responses, `/healthz` and `/readyz`\n- **E1 foundation**: authenticated `POST /api/v1/rules/preflight` validates bounded JSON Sigma draft structure (title, logsource, detection selectors, optional bounded `timeframe`, field-modifier syntax, and condition references) with `rule:create` RBAC. Deeply nested boolean conditions are rejected before recursive parsing. This is structural preflight only, **not** pySigma schema validation, persistence, conversion, or execution.
+- **API**: FastAPI service with structured logging, security headers, RFC 7807 error responses, `/healthz` and `/readyz`
+- **E1 draft authoring**: authenticated `POST /api/v1/rules/preflight` checks bounded JSON Sigma draft structure. `POST /api/v1/rules` persists a draft and its initial version in one database transaction, linked to the authenticated owner and protected by `rule:create` RBAC. Database write failures roll back the transaction. JSON is stored as a YAML 1.2-compatible representation. This is **structural validation only**, not pySigma semantic validation, approval, conversion, or execution.
 - **Worker**: Celery app wired to Redis, one real task (`ping`) proving the broker round-trip
 - **Frontend**: React + TypeScript login flow against the real auth API
 - **Database**: full initial migration for the production schema (19 tables, `docs/DATABASE_SCHEMA.md` §1–2.19), RBAC seed data
 - **Docs**: PRD, architecture, threat model, database schema, API spec, research design, related-work literature review, roadmap — see `docs/`
 
-**Not yet built**: persistent rule authoring, full pySigma validation, rule execution, MITRE mapping, SIEM integrations, the AI assistant, and the research subsystem (attack corpus, differential verifier, experiment harness). These are E1 onward — see `docs/ROADMAP.md`.
+**Not yet built**: draft listing/editing and later version increments, full pySigma validation, rule execution, MITRE mapping, SIEM integrations, the AI assistant, and the research subsystem (attack corpus, differential verifier, experiment harness). E1 is still incomplete — see `docs/ROADMAP.md`.
 
 ## Verification status (honest, not aspirational)
 
@@ -25,13 +26,13 @@ Local development was originally done in a sandbox without Docker/Postgres, so l
 
 | Check | Status | How |
 |---|---|---|
-| Backend unit tests (auth service logic) | ✅ Passing | `pytest`, in-memory fake repositories, 11 tests |
-| Backend API tests (full HTTP request/response cycle) | ✅ Passing | `pytest` + httpx ASGI transport, dependency-injection overrides, 9 tests |
+| Backend unit tests (auth and draft persistence) | ✅ Passing | `pytest`, in-memory repositories and transaction fakes; does not prove PostgreSQL writes |
+| Backend API tests (auth, preflight, draft creation) | ✅ Passing | `pytest` + httpx ASGI transport, dependency-injection overrides; no live DB |
 | Backend lint | ✅ Clean | `ruff check` |
-| Backend type check | ✅ Clean | `mypy --strict`-equivalent config, 22 source files |
+| Backend type check | ✅ Clean | `mypy app/` with repository's configured rules |
 | Migration SQL syntax | ✅ Valid | All 88 DDL statements parsed successfully by `pglast` (the real Postgres grammar, not a guess) |
 | Migration revision graph | ✅ Valid | `alembic history` resolves the chain correctly |
-| Migration executes against a live Postgres | ⚠️ Partially verified | Docker integration boots a real Postgres-backed stack in CI; the release still does not claim a separately audited production migration/deployment. |
+| Draft create against live Postgres | ⚠️ Not separately tested | CI tests transaction behavior with fakes and smoke-tests a Postgres-backed container stack; it does not yet exercise an authenticated create/read database round-trip. |
 | Worker tests | ✅ Passing | `pytest`, 2 tests including a real Celery eager-mode task execution |
 | Frontend type check | ✅ Clean | `tsc --noEmit` |
 | Frontend lint | ✅ Clean | `eslint` |
@@ -41,6 +42,24 @@ Local development was originally done in a sandbox without Docker/Postgres, so l
 | Every Dockerfile's build context + COPY paths | ✅ Verified | Programmatically resolved against the real filesystem, not eyeballed |
 | Dockerfile best-practice linting (hadolint) | ⚠️ Not run | hadolint's release download wasn't reachable from this sandbox |
 | `docker compose up` end-to-end, all services healthy | ✅ Verified in CI | GitHub Actions builds/starts Postgres, Redis, MinIO, API, worker, and frontend; waits for health; then smoke-tests the API. |
+
+## Draft rule creation (initial E1 slice)
+
+After applying migration 0001 and obtaining a bearer access token for a user
+with `rule:create` permission, submit:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/rules \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Failed logins","logsource":{"product":"windows"},"detection":{"selection":{"EventID":4625},"condition":"selection"}}'
+```
+
+A successful request returns HTTP 201 with the rule ID, rule UID, version ID,
+version number 1, draft status, and `structural_only` validation level.
+The database stores a rule and version together; it does not validate with
+pySigma or make the rule deployable. Transaction behavior is tested offline,
+not yet with an authenticated live PostgreSQL round-trip.
 
 ## Running it yourself
 
