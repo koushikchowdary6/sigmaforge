@@ -83,6 +83,18 @@ async def test_authenticated_create_persists_rule_and_version_in_postgres(app_an
         assert payload["validation_level"] == "structural_only"
         assert payload["version_number"] == 1
 
+        # Exercise the read API against a new real database session, not
+        # merely the in-memory objects used during creation.
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            read = await client.get(
+                f"/api/v1/rules/{payload['id']}",
+                headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+            )
+            assert (await client.get(f"/api/v1/rules/{payload['id']}")).status_code == 401
+        assert read.status_code == 200, read.text
+        assert read.json()["sigma"] == DRAFT
+        assert read.json()["version_id"] == payload["version_id"]
+
         # Read in an independent session to prove commit durability, not just
         # identity-map visibility in the request's session.
         async with sessions() as session:
