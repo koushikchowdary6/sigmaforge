@@ -17,6 +17,29 @@ from app.detection.validation import RulePreflightRequest
 from app.models.detection import DetectionRule, DetectionRuleVersion
 
 
+def _decode_stored_rule_snapshot(serialized: str) -> dict[str, object]:
+    """Reject corrupt historical JSON without exposing a server error.
+
+    This is a minimal stored-data shape check, not new pySigma validation.
+    It preserves compatibility with historical structural drafts while
+    ensuring version reads and diffs cannot fail with JSON/KeyError crashes.
+    """
+    try:
+        snapshot = json.loads(serialized)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found") from None
+    if (
+        not isinstance(snapshot, dict)
+        or not isinstance(snapshot.get("title"), str)
+        or not isinstance(snapshot.get("logsource"), dict)
+        or not isinstance(snapshot.get("detection"), dict)
+        or not isinstance(snapshot["detection"].get("condition"), str | list)
+        or any(not isinstance(key, str) for key in snapshot["detection"])
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    return snapshot
+
+
 async def create_rule_draft(
     session: AsyncSession, draft: RulePreflightRequest, owner_id: uuid.UUID
 ) -> dict[str, object]:
@@ -78,7 +101,7 @@ async def get_owned_rule_draft(
         "title": rule.title,
         "version_id": str(version.id),
         "version_number": version.version_number,
-        "sigma": json.loads(version.sigma_yaml),
+        "sigma": _decode_stored_rule_snapshot(version.sigma_yaml),
         "validation_level": "structural_only",
     }
 
@@ -254,7 +277,7 @@ async def get_owned_rule_version(
         "version_id": str(version.id),
         "version_number": version.version_number,
         "is_current": version.id == rule.current_version_id,
-        "sigma": json.loads(version.sigma_yaml),
+        "sigma": _decode_stored_rule_snapshot(version.sigma_yaml),
         "validation_level": "structural_only",
     }
 
