@@ -10,6 +10,7 @@ import json
 import uuid
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.detection.validation import RulePreflightRequest
@@ -78,4 +79,44 @@ async def get_owned_rule_draft(
         "version_number": version.version_number,
         "sigma": json.loads(version.sigma_yaml),
         "validation_level": "structural_only",
+    }
+
+
+async def list_owned_rule_drafts(
+    session: AsyncSession, owner_id: uuid.UUID, limit: int, offset: int
+) -> dict[str, object]:
+    """List only the authenticated owner's drafts, without loading Sigma bodies.
+
+    A stable (title, id) order makes offset pagination deterministic for an
+    unchanged dataset. Fetch one extra row to determine whether more results
+    exist, without an expensive count or exposing other owners' records.
+    """
+    statement = (
+        select(DetectionRule, DetectionRuleVersion)
+        .join(DetectionRuleVersion, DetectionRule.current_version_id == DetectionRuleVersion.id)
+        .where(
+            DetectionRule.owner_id == owner_id,
+            DetectionRuleVersion.rule_id == DetectionRule.id,
+        )
+        .order_by(DetectionRule.title.asc(), DetectionRule.id.asc())
+        .offset(offset)
+        .limit(limit + 1)
+    )
+    rows = (await session.execute(statement)).all()
+    items = [
+        {
+            "id": str(rule.id),
+            "rule_uid": rule.rule_uid,
+            "title": rule.title,
+            "version_id": str(version.id),
+            "version_number": version.version_number,
+            "validation_level": "structural_only",
+        }
+        for rule, version in rows[:limit]
+    ]
+    return {
+        "items": items,
+        "limit": limit,
+        "offset": offset,
+        "has_more": len(rows) > limit,
     }
