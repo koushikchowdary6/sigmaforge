@@ -6,10 +6,11 @@
 
 > **Implementation status:** this document specifies the full target API
 > across every milestone in `ROADMAP.md` (E0–E5, R0–R4), not what exists
-> today. As of the current release (E0), only **§2 Auth** and **§13 Health &
-> Ops (`/healthz`, `/readyz`)** are implemented and tested. Every other
-> section describes planned functionality. See `README.md`'s verification
-> table and `RELEASE_REPORT.md` for exactly what is real right now.
+> today. Auth, health, and the structurally validated rule-draft subset
+> (`POST /rules/preflight`, `POST /rules`, `GET /rules`, and
+> `GET /rules/{id}`) are implemented and tested. The broader review,
+> deployment, and AI endpoints below remain aspirational. See `README.md`
+> and `RELEASE_REPORT.md` for verified implementation status.
 
 ---
 
@@ -73,6 +74,22 @@ Note: there is no public self-registration endpoint. Users are provisioned by an
 | GET | `/roles` | List roles + permissions | Admin |
 
 ## 4. Detection Rules
+
+**Implemented draft-listing contract:** `GET /rules?limit=20&offset=0`
+requires `rule:create` permission, returns only the authenticated owner's
+current structurally validated drafts, and uses a stable `(title, id)` order.
+`limit` is 1–100; `offset` is 0–10000. Response:
+
+```json
+{ "items": [{ "id": "uuid", "rule_uid": "uuid", "title": "Example",
+               "version_id": "uuid", "version_number": 1,
+               "validation_level": "structural_only" }],
+  "limit": 20, "offset": 0, "has_more": false }
+```
+
+The listing does not include Sigma bodies, total counts, status filters, or
+semantic approval. The general pagination and role table below describes the
+**future** API rather than this implemented draft-only subset.
 
 | Method | Path | Description | Roles |
 |---|---|---|---|

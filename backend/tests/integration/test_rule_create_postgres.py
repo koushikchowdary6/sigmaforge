@@ -95,6 +95,40 @@ async def test_authenticated_create_persists_rule_and_version_in_postgres(app_an
         assert read.json()["sigma"] == DRAFT
         assert read.json()["version_id"] == payload["version_id"]
 
+        # Real database owner filtering and stable pagination: another user's
+        # draft must never appear, even when it sorts before ours.
+        other_owner = uuid.uuid4()
+        async with sessions() as session:
+            await session.execute(
+                insert(User).values(
+                    id=other_owner,
+                    email=f"other-{other_owner.hex}@corp.com",
+                    hashed_password=user.hashed_password,
+                    full_name="Other Engineer",
+                    role_id=role_id,
+                )
+            )
+            await session.commit()
+            await create_rule_draft(
+                session, RulePreflightRequest(**{**DRAFT, "title": "A hidden draft"}), other_owner
+            )
+            await create_rule_draft(
+                session, RulePreflightRequest(**{**DRAFT, "title": "A first draft"}), user.id
+            )
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+            first = await client.get("/api/v1/rules?limit=1&offset=0", headers=headers)
+            second = await client.get("/api/v1/rules?limit=1&offset=1", headers=headers)
+            full = await client.get("/api/v1/rules?limit=100", headers=headers)
+        assert first.status_code == second.status_code == full.status_code == 200
+        assert [r["title"] for r in first.json()["items"]] == ["A first draft"]
+        assert first.json()["has_more"] is True
+        assert [r["title"] for r in second.json()["items"]] == ["Failed logins"]
+        assert second.json()["has_more"] is False
+        assert [r["title"] for r in full.json()["items"]] == ["A first draft", "Failed logins"]
+        assert all("sigma" not in item for item in full.json()["items"])
+
         # Read in an independent session to prove commit durability, not just
         # identity-map visibility in the request's session.
         async with sessions() as session:
