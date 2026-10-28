@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Path, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,8 @@ from app.core.dependencies import require_permission
 from app.detection.service import (
     create_rule_draft,
     get_owned_rule_draft,
+    get_owned_rule_version,
+    list_owned_rule_versions,
     list_owned_rule_drafts,
     revise_owned_rule_draft,
 )
@@ -82,3 +84,26 @@ async def revise_rule(
 ) -> dict[str, object]:
     """Create the next immutable draft version; reject stale or foreign edits."""
     return await revise_owned_rule_draft(db, rule_id, user.id, body.expected_version, body.draft)
+
+
+@router.get("/{rule_id}/versions")
+async def list_rule_versions(
+    rule_id: uuid.UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    user: User = Depends(require_permission("rule:create")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """List the owner's immutable versions without exposing Sigma bodies."""
+    return await list_owned_rule_versions(db, rule_id, user.id, limit, offset)
+
+
+@router.get("/{rule_id}/versions/{version_number}")
+async def read_rule_version(
+    rule_id: uuid.UUID,
+    version_number: int = Path(ge=1),
+    user: User = Depends(require_permission("rule:create")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Retrieve an authorized historical Sigma snapshot by version number."""
+    return await get_owned_rule_version(db, rule_id, user.id, version_number)
