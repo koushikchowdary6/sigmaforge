@@ -26,6 +26,15 @@ from tests.integration.test_rule_revision_api import revised_draft
     "{}",
     '{"title":"x","logsource":{},"detection":[]}',
     '{"title":"x","logsource":{},"detection":{"condition":7}}',
+    # Each of these would otherwise parse as a plausible rule snapshot.
+    '{"title":"x","title":"shadow","logsource":{"product":"windows"},'
+    '"detection":{"selection":{"EventID":4625},"condition":"selection"}}',
+    '{"title":"x","logsource":{"product":"windows"},'
+    '"detection":{"selection":{"EventID":4625,"EventID":4624},"condition":"selection"}}',
+    '{"title":"x","logsource":{"product":"windows"},'
+    '"detection":{"selection":{"EventID":NaN},"condition":"selection"}}',
+    '{"title":"x","logsource":{"product":"windows"},'
+    '"detection":{"selection":{"EventID":Infinity},"condition":"selection"}}',
 ])
 async def test_corrupt_current_snapshot_returns_404_for_owner_reads(corrupt):
     owner = uuid.uuid4()
@@ -58,6 +67,31 @@ async def test_corrupt_historical_snapshot_cannot_generate_misleading_diff():
         if isinstance(obj, DetectionRuleVersion) and obj.version_number == 1
     )
     historical.sigma_yaml = '{"title":"bad","detection":{}}'
+
+    with pytest.raises(HTTPException) as exc:
+        await diff_owned_rule_version(session, rule_id, owner, 2)
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Rule not found"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("corrupt", [
+    '{"title":"x","title":"shadow","logsource":{"product":"windows"},'
+    '"detection":{"selection":{"EventID":4625},"condition":"selection"}}',
+    '{"title":"x","logsource":{"product":"windows"},'
+    '"detection":{"selection":{"EventID":-Infinity},"condition":"selection"}}',
+])
+async def test_ambiguous_historical_snapshot_cannot_generate_diff(corrupt):
+    owner = uuid.uuid4()
+    session = HistorySession()
+    created = await create_rule_draft(session, RulePreflightRequest(**DRAFT), owner)
+    rule_id = uuid.UUID(created["id"])
+    await revise_owned_rule_draft(session, rule_id, owner, 1, revised_draft())
+    historical = next(
+        obj for obj in session.objects
+        if isinstance(obj, DetectionRuleVersion) and obj.version_number == 1
+    )
+    historical.sigma_yaml = corrupt
 
     with pytest.raises(HTTPException) as exc:
         await diff_owned_rule_version(session, rule_id, owner, 2)
