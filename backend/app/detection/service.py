@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import uuid
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.detection.validation import RulePreflightRequest
@@ -55,5 +56,26 @@ async def create_rule_draft(
         "version_id": str(version_id),
         "version_number": 1,
         "status": "draft",
+        "validation_level": "structural_only",
+    }
+
+
+async def get_owned_rule_draft(
+    session: AsyncSession, rule_id: uuid.UUID, owner_id: uuid.UUID
+) -> dict[str, object]:
+    """Read only the requester's draft; hide other users' rule existence."""
+    rule = await session.get(DetectionRule, rule_id)
+    if rule is None or rule.owner_id != owner_id or rule.current_version_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    version = await session.get(DetectionRuleVersion, rule.current_version_id)
+    if version is None or version.rule_id != rule.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    return {
+        "id": str(rule.id),
+        "rule_uid": rule.rule_uid,
+        "title": rule.title,
+        "version_id": str(version.id),
+        "version_number": version.version_number,
+        "sigma": json.loads(version.sigma_yaml),
         "validation_level": "structural_only",
     }
