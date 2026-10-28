@@ -24,8 +24,24 @@ def _decode_stored_rule_snapshot(serialized: str) -> dict[str, object]:
     It preserves compatibility with historical structural drafts while
     ensuring version reads and diffs cannot fail with JSON/KeyError crashes.
     """
+    # json.loads normally accepts duplicate object keys (last value wins) and
+    # NaN/Infinity, neither of which is valid unambiguous stored JSON. A
+    # damaged immutable version must not be returned as trustworthy history.
+    def unique_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        obj: dict[str, object] = {}
+        for key, value in pairs:
+            if key in obj:
+                raise ValueError("duplicate stored JSON key")
+            obj[key] = value
+        return obj
+
+    def reject_nonfinite(_value: str) -> None:
+        raise ValueError("non-finite stored JSON value")
+
     try:
-        snapshot = json.loads(serialized)
+        snapshot = json.loads(
+            serialized, object_pairs_hook=unique_keys, parse_constant=reject_nonfinite
+        )
     except (TypeError, ValueError):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found") from None
     if (
