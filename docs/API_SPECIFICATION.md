@@ -8,7 +8,8 @@
 > across every milestone in `ROADMAP.md` (E0–E5, R0–R4), not what exists
 > today. Auth, health, and the structurally validated rule-draft subset
 > (`POST /rules/preflight`, `POST /rules`, `GET /rules`, and
-> `GET /rules/{id}`) are implemented and tested. The broader review,
+> `GET /rules/{id}`, and versioned draft-only `PATCH /rules/{id}`)
+> are implemented and tested. The broader review,
 > deployment, and AI endpoints below remain aspirational. See `README.md`
 > and `RELEASE_REPORT.md` for verified implementation status.
 
@@ -87,9 +88,30 @@ current structurally validated drafts, and uses a stable `(title, id)` order.
   "limit": 20, "offset": 0, "has_more": false }
 ```
 
+**Implemented draft revision contract:** `PATCH /rules/{id}` requires
+`rule:create` permission and ownership of a rule still in `draft` status.
+Request body:
+
+```json
+{ "expected_version": 1,
+  "draft": { "title": "Failed logins (revised)",
+             "logsource": { "product": "windows" },
+             "detection": { "selection": { "EventID": 4624 },
+                            "condition": "selection" } } }
+```
+
+The complete `draft` is structurally preflighted, not semantically approved.
+The endpoint appends an immutable version and updates the current pointer
+and metadata atomically. PostgreSQL row locking plus `expected_version`
+prevent stale concurrent writes (409); unchanged drafts and non-draft status
+also return 409. Other owners' rule IDs return 404. No review or deployment
+state is modified.
+
 The listing does not include Sigma bodies, total counts, status filters, or
 semantic approval. The general pagination and role table below describes the
-**future** API rather than this implemented draft-only subset.
+**future** API rather than these implemented draft-only contracts. In
+particular, the future metadata-only PATCH differs from the implemented
+versioned whole-draft PATCH described above.
 
 | Method | Path | Description | Roles |
 |---|---|---|---|
