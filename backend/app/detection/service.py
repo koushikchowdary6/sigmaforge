@@ -186,3 +186,74 @@ async def revise_owned_rule_draft(
         "status": "draft",
         "validation_level": "structural_only",
     }
+
+
+async def list_owned_rule_versions(
+    session: AsyncSession,
+    rule_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    limit: int,
+    offset: int,
+) -> dict[str, object]:
+    """List immutable version metadata without returning full Sigma bodies.
+
+    Authorize against the rule owner before reading any version rows. A
+    descending version-number order is stable for an unchanged draft.
+    """
+    rule = await session.get(DetectionRule, rule_id)
+    if rule is None or rule.owner_id != owner_id or rule.current_version_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    statement = (
+        select(DetectionRuleVersion)
+        .where(DetectionRuleVersion.rule_id == rule_id)
+        .order_by(DetectionRuleVersion.version_number.desc())
+        .offset(offset)
+        .limit(limit + 1)
+    )
+    versions = (await session.execute(statement)).scalars().all()
+    return {
+        "id": str(rule.id),
+        "items": [
+            {
+                "version_id": str(version.id),
+                "version_number": version.version_number,
+                "is_current": version.id == rule.current_version_id,
+            }
+            for version in versions[:limit]
+        ],
+        "limit": limit,
+        "offset": offset,
+        "has_more": len(versions) > limit,
+        "validation_level": "structural_only",
+    }
+
+
+async def get_owned_rule_version(
+    session: AsyncSession,
+    rule_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    version_number: int,
+) -> dict[str, object]:
+    """Read one historical snapshot only after verifying rule ownership."""
+    rule = await session.get(DetectionRule, rule_id)
+    if rule is None or rule.owner_id != owner_id or rule.current_version_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    version = await session.scalar(
+        select(DetectionRuleVersion).where(
+            DetectionRuleVersion.rule_id == rule_id,
+            DetectionRuleVersion.version_number == version_number,
+        )
+    )
+    if version is None or version.rule_id != rule.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    return {
+        "id": str(rule.id),
+        "version_id": str(version.id),
+        "version_number": version.version_number,
+        "is_current": version.id == rule.current_version_id,
+        "sigma": json.loads(version.sigma_yaml),
+        "validation_level": "structural_only",
+    }
