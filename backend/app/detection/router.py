@@ -13,8 +13,8 @@ from app.detection.service import (
     create_rule_draft,
     get_owned_rule_draft,
     get_owned_rule_version,
-    list_owned_rule_versions,
     list_owned_rule_drafts,
+    list_owned_rule_versions,
     revise_owned_rule_draft,
 )
 from app.detection.validation import RulePreflightRequest
