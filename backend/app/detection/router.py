@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_permission
 from app.detection.service import (
     create_rule_draft,
+    diff_owned_rule_version,
     get_owned_rule_draft,
     get_owned_rule_version,
     list_owned_rule_drafts,
@@ -107,3 +108,14 @@ async def read_rule_version(
 ) -> dict[str, object]:
     """Retrieve an authorized historical Sigma snapshot by version number."""
     return await get_owned_rule_version(db, rule_id, user.id, version_number)
+
+
+@router.get("/{rule_id}/versions/{version_number}/diff")
+async def diff_rule_version(
+    rule_id: uuid.UUID,
+    version_number: int = Path(ge=2),
+    user: User = Depends(require_permission("rule:create")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Summarize changed draft fields versus N-1; owner-scoped, not semantic."""
+    return await diff_owned_rule_version(db, rule_id, user.id, version_number)
