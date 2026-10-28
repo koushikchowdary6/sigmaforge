@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
-from app.detection.service import create_rule_draft, get_owned_rule_draft
+from app.detection.service import create_rule_draft, get_owned_rule_draft, list_owned_rule_drafts
 from app.detection.validation import RulePreflightRequest
 from app.models.user import User
 
@@ -36,6 +36,17 @@ async def create_rule(
 ) -> dict[str, object]:
     """Persist a draft with version 1; no semantic approval or deployment."""
     return await create_rule_draft(db, body, user.id)
+
+
+@router.get("")
+async def list_rules(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    user: User = Depends(require_permission("rule:create")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Return only the requester's structurally validated drafts."""
+    return await list_owned_rule_drafts(db, user.id, limit, offset)
 
 
 @router.get("/{rule_id}")
