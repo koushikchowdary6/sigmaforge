@@ -33,7 +33,7 @@ def _decode_stored_rule_snapshot(serialized: str) -> dict[str, object]:
         or not isinstance(snapshot.get("title"), str)
         or not isinstance(snapshot.get("logsource"), dict)
         or not isinstance(snapshot.get("detection"), dict)
-        or not isinstance(snapshot["detection"].get("condition"), (str, list))
+        or not isinstance(snapshot["detection"].get("condition"), str | list)
         or any(not isinstance(key, str) for key in snapshot["detection"])
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
