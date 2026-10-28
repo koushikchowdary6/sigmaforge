@@ -161,6 +161,36 @@ async def test_authenticated_create_persists_rule_and_version_in_postgres(app_an
         assert revised_read.status_code == 200
         assert revised_read.json()["version_number"] == 2
         assert revised_read.json()["sigma"] == updated_draft
+
+        # Historical snapshots must remain queryable in a fresh database
+        # session, with ownership enforced before version disclosure.
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+            history_url = f"/api/v1/rules/{payload['id']}/versions"
+            history = await client.get(history_url + "?limit=1", headers=headers)
+            second_page = await client.get(
+                history_url + "?limit=1&offset=1", headers=headers
+            )
+            original_snapshot = await client.get(history_url + "/1", headers=headers)
+            current_snapshot = await client.get(history_url + "/2", headers=headers)
+            foreign_history = await client.get(
+                f"/api/v1/rules/{other_owner_draft['id']}/versions", headers=headers
+            )
+            foreign_snapshot = await client.get(
+                f"/api/v1/rules/{other_owner_draft['id']}/versions/1", headers=headers
+            )
+        assert history.status_code == second_page.status_code == 200
+        assert [item["version_number"] for item in history.json()["items"]] == [2]
+        assert history.json()["has_more"] is True
+        assert "sigma" not in history.json()["items"][0]
+        assert [item["version_number"] for item in second_page.json()["items"]] == [1]
+        assert second_page.json()["has_more"] is False
+        assert original_snapshot.status_code == current_snapshot.status_code == 200
+        assert original_snapshot.json()["sigma"] == DRAFT
+        assert original_snapshot.json()["is_current"] is False
+        assert current_snapshot.json()["sigma"] == updated_draft
+        assert current_snapshot.json()["is_current"] is True
+        assert foreign_history.status_code == foreign_snapshot.status_code == 404
         async with sessions() as session:
             original = await session.get(DetectionRuleVersion, uuid.UUID(payload["version_id"]))
             assert original is not None and json.loads(original.sigma_yaml) == DRAFT
