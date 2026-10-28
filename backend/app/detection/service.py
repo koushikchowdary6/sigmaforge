@@ -308,11 +308,17 @@ async def diff_owned_rule_version(
         )
     previous = await get_owned_rule_version(session, rule_id, owner_id, version_number - 1)
     current = await get_owned_rule_version(session, rule_id, owner_id, version_number)
+    old_sigma = previous["sigma"]
+    new_sigma = current["sigma"]
+    # Persisted history should always contain parsed objects. A corrupted
+    # snapshot must not trigger an unhandled type error or misleading diff.
+    if not isinstance(old_sigma, dict) or not isinstance(new_sigma, dict):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
     return {
         "id": str(rule_id),
         "previous_version_number": version_number - 1,
         "version_number": version_number,
         "is_current": current["is_current"],
         "validation_level": "structural_only",
-        **summarize_rule_version_changes(previous["sigma"], current["sigma"]),
+        **summarize_rule_version_changes(old_sigma, new_sigma),
     }
