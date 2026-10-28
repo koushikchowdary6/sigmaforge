@@ -12,13 +12,13 @@ This repository is under active, incremental development. **Current release: v0.
 
 - **Auth**: login, refresh-token rotation with reuse detection, logout, logout-all, RBAC (5 roles: admin, detection_lead, detection_engineer, analyst, researcher)
 - **API**: FastAPI service with structured logging, security headers, RFC 7807 error responses, `/healthz` and `/readyz`
-- **E1 draft authoring**: authenticated `POST /api/v1/rules/preflight` checks bounded JSON Sigma draft structure. `POST /api/v1/rules` persists a draft and its initial version in one database transaction, linked to the authenticated owner and protected by `rule:create` RBAC. Database write failures roll back the transaction. JSON is stored as a YAML 1.2-compatible representation. This is **structural validation only**, not pySigma semantic validation, approval, conversion, or execution.
+- **E1 draft authoring**: authenticated `POST /api/v1/rules/preflight` checks bounded JSON Sigma draft structure; `POST /api/v1/rules` creates version 1 atomically. Owner-scoped `GET /api/v1/rules`, `GET /api/v1/rules/{id}`, and `PATCH /api/v1/rules/{id}` support listing, reading, and immutable versioned editing with stale-write protection. `GET /api/v1/rules/{id}/versions` returns paginated history metadata, and `GET /api/v1/rules/{id}/versions/{number}` retrieves an authorized historical snapshot. JSON is stored as a YAML 1.2-compatible representation. All these routes require `rule:create` RBAC. This is **structural validation only**, not pySigma semantic validation, approval, conversion, or execution.
 - **Worker**: Celery app wired to Redis, one real task (`ping`) proving the broker round-trip
 - **Frontend**: React + TypeScript login flow against the real auth API
 - **Database**: full initial migration for the production schema (19 tables, `docs/DATABASE_SCHEMA.md` §1–2.19), RBAC seed data
 - **Docs**: PRD, architecture, threat model, database schema, API spec, research design, related-work literature review, roadmap — see `docs/`
 
-**Not yet built**: draft listing/editing and later version increments, full pySigma validation, rule execution, MITRE mapping, SIEM integrations, the AI assistant, and the research subsystem (attack corpus, differential verifier, experiment harness). E1 is still incomplete — see `docs/ROADMAP.md`.
+**Not yet built**: full pySigma semantic validation, rule approval/deployment, rule execution, MITRE mapping, SIEM integrations, the AI assistant, and the research subsystem (attack corpus, differential verifier, experiment harness). E1 remains incomplete — see `docs/ROADMAP.md`.
 
 ## Verification status (honest, not aspirational)
 
@@ -26,13 +26,13 @@ Local development was originally done in a sandbox without Docker/Postgres, so l
 
 | Check | Status | How |
 |---|---|---|
-| Backend unit tests (auth and draft persistence) | ✅ Passing | `pytest`, in-memory repositories and transaction fakes; does not prove PostgreSQL writes |
-| Backend API tests (auth, preflight, draft creation) | ✅ Passing | `pytest` + httpx ASGI transport, dependency-injection overrides; no live DB |
+| Backend unit tests (auth, draft persistence, and history) | ✅ Passing | `pytest`, in-memory repositories and transaction fakes; complemented by real PostgreSQL tests |
+| Backend API tests (auth, preflight, draft CRUD/history) | ✅ Passing | `pytest` + httpx ASGI transport with dependency overrides; real database behavior tested separately |
 | Backend lint | ✅ Clean | `ruff check` |
 | Backend type check | ✅ Clean | `mypy app/` with repository's configured rules |
 | Migration SQL syntax | ✅ Valid | All 88 DDL statements parsed successfully by `pglast` (the real Postgres grammar, not a guess) |
 | Migration revision graph | ✅ Valid | `alembic history` resolves the chain correctly |
-| Draft create against live Postgres | ⚠️ Not separately tested | CI tests transaction behavior with fakes and smoke-tests a Postgres-backed container stack; it does not yet exercise an authenticated create/read database round-trip. |
+| Draft create/read/edit/history against live Postgres | ✅ Passing in CI | Dedicated PostgreSQL 16 job applies Alembic migrations and exercises authenticated creation, owner-scoped reads/listing/history, immutable revisions, stale-write conflicts, foreign-key constraints, and rollback |
 | Worker tests | ✅ Passing | `pytest`, 2 tests including a real Celery eager-mode task execution |
 | Frontend type check | ✅ Clean | `tsc --noEmit` |
 | Frontend lint | ✅ Clean | `eslint` |
@@ -58,8 +58,24 @@ curl -X POST http://localhost:8000/api/v1/rules \
 A successful request returns HTTP 201 with the rule ID, rule UID, version ID,
 version number 1, draft status, and `structural_only` validation level.
 The database stores a rule and version together; it does not validate with
-pySigma or make the rule deployable. Transaction behavior is tested offline,
-not yet with an authenticated live PostgreSQL round-trip.
+pySigma or make the rule deployable. Transaction behavior and authenticated create/read/edit/history round-trips are also verified in the dedicated migrated PostgreSQL CI job.
+
+## Reading draft history
+
+With the same bearer token and the UUID returned from draft creation:
+
+```bash
+curl -H "Authorization: Bearer $ACCESS_TOKEN" \
+  "http://localhost:8000/api/v1/rules/$RULE_ID/versions?limit=20&offset=0"
+curl -H "Authorization: Bearer $ACCESS_TOKEN" \
+  "http://localhost:8000/api/v1/rules/$RULE_ID/versions/1"
+```
+
+The paginated listing is ordered newest-first and returns version IDs,
+numbers, current-version flags, and `has_more` **without Sigma bodies**.
+The second endpoint returns the requested immutable Sigma snapshot.
+Both return 404 for missing or other users' rules and require `rule:create`.
+These are authoring/audit views, not semantic validation or approval.
 
 ## Running it yourself
 
