@@ -107,6 +107,15 @@ prevent stale concurrent writes (409); unchanged drafts and non-draft status
 also return 409. Other owners' rule IDs return 404. No review or deployment
 state is modified.
 
+**Implemented draft-version diff:** `GET /rules/{id}/versions/{number}/diff`
+compares immutable version N (N >= 2) against N-1. It requires `rule:create`
+permission and rule ownership. The response contains `fields_changed`,
+`selectors_added`, `selectors_removed`, `selectors_modified`, `has_changes`,
+and the two version numbers. It never returns raw Sigma bodies or cross-owner
+existence information (404 for inaccessible/missing versions). It is a
+structural review summary, **not** pySigma semantic validation, detection
+equivalence, approval, or deployment.
+
 The listing does not include Sigma bodies, total counts, status filters, or
 semantic approval. The general pagination and role table below describes the
 **future** API rather than these implemented draft-only contracts. In

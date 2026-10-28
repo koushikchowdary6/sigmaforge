@@ -257,3 +257,68 @@ async def get_owned_rule_version(
         "sigma": json.loads(version.sigma_yaml),
         "validation_level": "structural_only",
     }
+
+
+def summarize_rule_version_changes(previous: dict, current: dict) -> dict[str, object]:
+    """Summarize structural draft changes without exposing raw rule contents.
+
+    This is a review aid, not a pySigma semantic diff or detection-equivalence
+    check. Comparing parsed JSON avoids noisy key-order and formatting changes.
+    """
+    old_detection = previous["detection"]
+    new_detection = current["detection"]
+    reserved = {"condition", "timeframe"}
+    old_selectors = {k: v for k, v in old_detection.items() if k not in reserved}
+    new_selectors = {k: v for k, v in new_detection.items() if k not in reserved}
+    old_names = set(old_selectors)
+    new_names = set(new_selectors)
+    fields_changed = [
+        field for field in ("title", "logsource")
+        if previous[field] != current[field]
+    ]
+    fields_changed.extend(
+        f"detection.{field}" for field in ("condition", "timeframe")
+        if old_detection.get(field) != new_detection.get(field)
+    )
+    added = sorted(new_names - old_names)
+    removed = sorted(old_names - new_names)
+    modified = sorted(
+        name for name in old_names & new_names
+        if old_selectors[name] != new_selectors[name]
+    )
+    return {
+        "fields_changed": fields_changed,
+        "selectors_added": added,
+        "selectors_removed": removed,
+        "selectors_modified": modified,
+        "has_changes": bool(fields_changed or added or removed or modified),
+    }
+
+
+async def diff_owned_rule_version(
+    session: AsyncSession,
+    rule_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    version_number: int,
+) -> dict[str, object]:
+    """Compare an owner's immutable version N with N-1, never cross owners."""
+    if version_number < 2:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Previous version not found"
+        )
+    previous = await get_owned_rule_version(session, rule_id, owner_id, version_number - 1)
+    current = await get_owned_rule_version(session, rule_id, owner_id, version_number)
+    old_sigma = previous["sigma"]
+    new_sigma = current["sigma"]
+    # Persisted history should always contain parsed objects. A corrupted
+    # snapshot must not trigger an unhandled type error or misleading diff.
+    if not isinstance(old_sigma, dict) or not isinstance(new_sigma, dict):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    return {
+        "id": str(rule_id),
+        "previous_version_number": version_number - 1,
+        "version_number": version_number,
+        "is_current": current["is_current"],
+        "validation_level": "structural_only",
+        **summarize_rule_version_changes(old_sigma, new_sigma),
+    }
