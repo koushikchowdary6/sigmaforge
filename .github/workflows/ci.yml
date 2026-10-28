@@ -144,3 +144,47 @@ jobs:
           scan-ref: .
           severity: CRITICAL,HIGH
           exit-code: 0 # informational until a documented triage/exception process exists
+
+postgres-rule-integration:
+    runs-on: ubuntu-latest
+    needs: [backend]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sigmaforge_ci
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: sigmaforge_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sigmaforge_ci -d sigmaforge_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql+asyncpg://sigmaforge_ci:ci-only-password@localhost:5432/sigmaforge_ci
+      SIGMAFORGE_TEST_POSTGRES_URL: postgresql+asyncpg://sigmaforge_ci:ci-only-password@localhost:5432/sigmaforge_ci
+      # Alembic only needs the DB URL; the HTTP fixture generates a test RSA keypair.
+      JWT_PRIVATE_KEY: migration-only-unused
+      JWT_PUBLIC_KEY: migration-only-unused
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend test dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Apply production Alembic schema to disposable PostgreSQL
+        run: alembic upgrade head
+
+      - name: Exercise authenticated rule creation and rollback against PostgreSQL
+        run: pytest tests/integration/test_rule_create_postgres.py -v
