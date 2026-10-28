@@ -4,15 +4,29 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
-from app.detection.service import create_rule_draft, get_owned_rule_draft, list_owned_rule_drafts
+from app.detection.service import (
+    create_rule_draft,
+    get_owned_rule_draft,
+    list_owned_rule_drafts,
+    revise_owned_rule_draft,
+)
 from app.detection.validation import RulePreflightRequest
 from app.models.user import User
 
 router = APIRouter(prefix="/rules", tags=["rules"])
+
+
+class RuleDraftRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    draft: RulePreflightRequest
+
 
 
 @router.post("/preflight")
@@ -57,3 +71,14 @@ async def read_owned_rule(
 ) -> dict[str, object]:
     """Return the current version of a draft belonging to this user only."""
     return await get_owned_rule_draft(db, rule_id, user.id)
+
+
+@router.patch("/{rule_id}")
+async def revise_rule(
+    rule_id: uuid.UUID,
+    body: RuleDraftRevisionRequest,
+    user: User = Depends(require_permission("rule:create")),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object]:
+    """Create the next immutable draft version; reject stale or foreign edits."""
+    return await revise_owned_rule_draft(db, rule_id, user.id, body.expected_version, body.draft)

@@ -109,7 +109,7 @@ async def test_authenticated_create_persists_rule_and_version_in_postgres(app_an
                 )
             )
             await session.commit()
-            await create_rule_draft(
+            other_owner_draft = await create_rule_draft(
                 session, RulePreflightRequest(**{**DRAFT, "title": "A hidden draft"}), other_owner
             )
             await create_rule_draft(
@@ -129,6 +129,44 @@ async def test_authenticated_create_persists_rule_and_version_in_postgres(app_an
         assert [r["title"] for r in full.json()["items"]] == ["A first draft", "Failed logins"]
         assert all("sigma" not in item for item in full.json()["items"])
 
+        # A revision creates an immutable second version; stale writes cannot
+        # overwrite the winner and other owners cannot edit the draft.
+        updated_draft = {
+            **DRAFT,
+            "title": "Failed logins - reviewed draft",
+            "detection": {"selection": {"EventID": 4624}, "condition": "selection"},
+        }
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+            patch = await client.patch(
+                f"/api/v1/rules/{payload['id']}",
+                headers=headers,
+                json={"expected_version": 1, "draft": updated_draft},
+            )
+            assert patch.status_code == 200, patch.text
+            assert patch.json()["version_number"] == 2
+            stale = await client.patch(
+                f"/api/v1/rules/{payload['id']}",
+                headers=headers,
+                json={"expected_version": 1, "draft": DRAFT},
+            )
+            assert stale.status_code == 409
+            foreign = await client.patch(
+                f"/api/v1/rules/{other_owner_draft['id']}",
+                headers=headers,
+                json={"expected_version": 1, "draft": updated_draft},
+            )
+            assert foreign.status_code == 404
+            revised_read = await client.get(f"/api/v1/rules/{payload['id']}", headers=headers)
+        assert revised_read.status_code == 200
+        assert revised_read.json()["version_number"] == 2
+        assert revised_read.json()["sigma"] == updated_draft
+        async with sessions() as session:
+            original = await session.get(DetectionRuleVersion, uuid.UUID(payload["version_id"]))
+            assert original is not None and json.loads(original.sigma_yaml) == DRAFT
+            revised = await session.get(DetectionRuleVersion, uuid.UUID(patch.json()["version_id"]))
+            assert revised is not None and json.loads(revised.sigma_yaml) == updated_draft
+
         # Read in an independent session to prove commit durability, not just
         # identity-map visibility in the request's session.
         async with sessions() as session:
@@ -138,7 +176,7 @@ async def test_authenticated_create_persists_rule_and_version_in_postgres(app_an
             version = await session.get(DetectionRuleVersion, version_id)
             assert rule is not None and version is not None
             assert rule.owner_id == user.id
-            assert rule.current_version_id == version.id
+            assert rule.current_version_id == uuid.UUID(patch.json()["version_id"])
             assert version.rule_id == rule.id
             assert version.created_by == user.id
             assert version.version_number == 1
