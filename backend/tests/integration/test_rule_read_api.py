@@ -92,3 +92,29 @@ async def test_read_requires_authentication_and_rule_permission(app_and_repo):
     token = await _login(app)
     user.role = Role(id=4, name="analyst")
     assert (await _request(app, path, token)).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_endpoint_enforces_auth_bounds_and_owner_query(app_and_repo):
+    from tests.unit.test_rule_listing import FakeSession, make_row
+
+    app, _users, _tokens, user = app_and_repo
+    session = FakeSession([make_row("Alpha", user.id), make_row("Beta", user.id)])
+
+    async def fake_db():
+        yield session
+
+    app.dependency_overrides[get_db] = fake_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.get("/api/v1/rules")).status_code == 401
+        token = await _login(app)
+        headers = {"Authorization": f"Bearer {token}"}
+        response = await client.get("/api/v1/rules?limit=1&offset=0", headers=headers)
+        assert response.status_code == 200
+        assert [item["title"] for item in response.json()["items"]] == ["Alpha"]
+        assert response.json()["has_more"] is True
+        for query in ("limit=0", "limit=101", "offset=-1", "offset=10001"):
+            invalid = await client.get(f"/api/v1/rules?{query}", headers=headers)
+            assert invalid.status_code == 422
+        user.role = Role(id=4, name="analyst")
+        assert (await client.get("/api/v1/rules", headers=headers)).status_code == 403
