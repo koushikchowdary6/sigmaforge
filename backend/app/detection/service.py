@@ -10,6 +10,7 @@ import json
 import uuid
 
 from fastapi import HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,6 +54,15 @@ def _decode_stored_rule_snapshot(serialized: str) -> dict[str, object]:
         or any(not isinstance(key, str) for key in snapshot["detection"])
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+    # Stored JSON can be syntactically valid yet violate the same structural
+    # contract required on writes (e.g. an undefined selector, malformed
+    # condition list, or nested selector object). Never serve or diff a
+    # corrupted immutable version as though it were a reviewed Sigma draft.
+    # Keep the original snapshot representation for backward-compatible reads.
+    try:
+        RulePreflightRequest.model_validate(snapshot)
+    except (ValidationError, ValueError, TypeError, OverflowError, RecursionError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found") from None
     return snapshot
 
 
