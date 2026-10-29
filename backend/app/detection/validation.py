@@ -9,6 +9,7 @@ import json
 import math
 import re
 import unicodedata
+from fnmatch import fnmatchcase
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -20,9 +21,10 @@ _TIMEFRAME = re.compile(r"^[1-9][0-9]{0,5}(?:s|m|h|d|w|M|y)$")
 _SELECTOR_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _LOGSOURCE_KEYS = {"category", "product", "service", "definition"}
 
-_CONDITION_IDENTIFIERS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\*?")
+_CONDITION_IDENTIFIERS = re.compile(r"[A-Za-z][A-Za-z0-9_*]*")
 _CONDITION_KEYWORDS = {"and", "or", "not", "of", "all", "them"}
-_CONDITION_TOKENS = re.compile(r"[A-Za-z][A-Za-z0-9_]*\*?|[0-9]+|[()]")  # lexical subset
+_CONDITION_TOKENS = re.compile(r"[A-Za-z][A-Za-z0-9_*]*|[0-9]+|[()]")  # lexical subset
+_CONDITION_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_*]*$")
 
 
 def _well_formed_boolean_condition(condition: str) -> bool:
@@ -96,8 +98,8 @@ def _well_formed_boolean_condition(condition: str) -> bool:
             index += 1
             target = tokens[index]
             index += 1
-            return target.lower() == "them" or bool(_SELECTOR_NAME.fullmatch(target.rstrip("*")))
-        if lower in _CONDITION_KEYWORDS or token == ")" or token.endswith("*"):
+            return target.lower() == "them" or bool(_CONDITION_PATTERN.fullmatch(target))
+        if lower in _CONDITION_KEYWORDS or token == ")" or "*" in token:
             return False
         return bool(_SELECTOR_NAME.fullmatch(token))
 
@@ -155,8 +157,8 @@ def _references_known_selectors(condition: str, selectors: set[str]) -> bool:
     if not references and "them" not in (word.lower() for word in words):
         return False
     return all(
-        any(name.startswith(word[:-1]) for name in selectors)
-        if word.endswith("*") else word in selectors
+        any(fnmatchcase(name, word) for name in selectors)
+        if "*" in word else word in selectors
         for word in references
     )
 
@@ -174,8 +176,8 @@ def _feasible_quantifiers(condition: str, selectors: set[str]) -> bool:
             continue
         if target.lower() == "them":
             available = len(selectors)
-        elif target.endswith("*"):
-            available = sum(name.startswith(target[:-1]) for name in selectors)
+        elif "*" in target:
+            available = sum(fnmatchcase(name, target) for name in selectors)
         else:
             available = int(target in selectors)
         if int(count) > available:
