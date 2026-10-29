@@ -60,6 +60,18 @@ def _well_formed_boolean_condition(condition: str) -> bool:
     if expression[offset:].strip():
         return False
 
+    # Regex tokenization alone accepts malformed concatenations such as
+    # "2of them" by splitting a digit from the adjacent keyword. Sigma
+    # quantifiers require separators around "of"; preserve tabs/newlines.
+    for position in range(len(matches) - 2):
+        first, operator, target = matches[position:position + 3]
+        if (
+            (first.group().isdigit() or first.group().lower() == "all")
+            and operator.group().lower() == "of"
+            and (first.end() == operator.start() or operator.end() == target.start())
+        ):
+            return False
+
     index = 0
 
     def atom() -> bool:
