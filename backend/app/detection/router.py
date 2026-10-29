@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,7 @@ from app.detection.service import (
     list_owned_rule_versions,
     revise_owned_rule_draft,
 )
+from app.detection.semantic import parse_rule_with_pysigma
 from app.detection.validation import RulePreflightRequest
 from app.models.user import User
 
@@ -43,6 +44,18 @@ async def preflight_rule(
         "selector_count": len(body.selector_names),
         "selector_names": body.selector_names,
     }
+
+
+@router.post("/semantic-preflight")
+async def semantic_preflight_rule(
+    body: RulePreflightRequest,
+    _user: User = Depends(require_permission("rule:create")),
+) -> dict[str, object]:
+    """Opt-in upstream Sigma parsing; no conversion, approval, or deployment."""
+    try:
+        return parse_rule_with_pysigma(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
