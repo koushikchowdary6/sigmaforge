@@ -8,8 +8,8 @@ from __future__ import annotations
 import json
 import math
 import re
-from fnmatch import fnmatchcase
 import unicodedata
+from fnmatch import fnmatchcase
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
