@@ -8,3 +8,4 @@ alembic==1.14.0
 argon2-cffi==23.1.0
 pyjwt[crypto]==2.15.1
 email-validator==2.2.0
+pysigma==1.5.0
