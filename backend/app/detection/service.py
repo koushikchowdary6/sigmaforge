@@ -17,6 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.detection.validation import RulePreflightRequest
 from app.models.detection import DetectionRule, DetectionRuleVersion
 
+# The write boundary caps unescaped UTF-8 JSON at 64 KiB. Persisted snapshots
+# use ensure_ascii=True and can expand Unicode into escape sequences.
+# One MiB comfortably exceeds valid serialized drafts while bounding damaged
+# database rows before parsing or version-diff work.
+_MAX_STORED_SNAPSHOT_CHARS = 1_048_576
+
 
 def _decode_stored_rule_snapshot(serialized: str) -> dict[str, object]:
     """Reject corrupt historical JSON without exposing a server error.
@@ -39,11 +45,13 @@ def _decode_stored_rule_snapshot(serialized: str) -> dict[str, object]:
     def reject_nonfinite(_value: str) -> None:
         raise ValueError("non-finite stored JSON value")
 
+    if not isinstance(serialized, str) or len(serialized) > _MAX_STORED_SNAPSHOT_CHARS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
     try:
         snapshot = json.loads(
             serialized, object_pairs_hook=unique_keys, parse_constant=reject_nonfinite
         )
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found") from None
     if (
         not isinstance(snapshot, dict)
