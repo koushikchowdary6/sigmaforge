@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import require_permission
+from app.detection.semantic import parse_rule_with_pysigma
 from app.detection.service import (
     create_rule_draft,
     diff_owned_rule_version,
@@ -18,7 +19,6 @@ from app.detection.service import (
     list_owned_rule_versions,
     revise_owned_rule_draft,
 )
-from app.detection.semantic import parse_rule_with_pysigma
 from app.detection.validation import RulePreflightRequest
 from app.models.user import User
 
