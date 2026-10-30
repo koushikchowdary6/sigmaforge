@@ -210,8 +210,13 @@ async def revise_owned_rule_draft(
     if previous.version_number != expected_version:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Draft version conflict")
 
+    # Validate the immutable predecessor before appending a new version.
+    # A damaged current snapshot must not be laundered into a healthy-looking
+    # revision chain. Compare parsed data, not serialized key order/spacing:
+    # an unchanged draft is not a legitimate new version.
+    previous_snapshot = _decode_stored_rule_snapshot(previous.sigma_yaml)
     canonical = json.dumps(draft.model_dump(), ensure_ascii=True, sort_keys=True)
-    if canonical == previous.sigma_yaml:
+    if draft.model_dump() == previous_snapshot:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Draft is unchanged")
 
     version = DetectionRuleVersion(
