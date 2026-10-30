@@ -81,6 +81,14 @@ class FakeRefreshTokenRepository:
                 return token
         return None
 
+    async def consume_if_active(self, token_id: uuid.UUID, *, now: datetime) -> bool:
+        # Mirror the SQL conditional update, including the expiry boundary.
+        token = self.tokens.get(token_id)
+        if token is None or token.revoked_at is not None or token.expires_at <= now:
+            return False
+        token.revoked_at = now
+        return True
+
     async def revoke(self, token_id: uuid.UUID) -> None:
         from datetime import timezone
 
