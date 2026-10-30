@@ -85,6 +85,24 @@ class SqlAlchemyRefreshTokenRepository:
         result = await self._session.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
         return result.scalar_one_or_none()
 
+    async def consume_if_active(self, token_id: uuid.UUID, *, now: datetime) -> bool:
+        # One conditional UPDATE is the concurrency boundary. Two requests
+        # that read the same live token cannot both consume it: PostgreSQL
+        # rechecks the predicate after acquiring the row lock.
+        result = await self._session.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.id == token_id,
+                RefreshToken.revoked_at.is_(None),
+                RefreshToken.expires_at > now,
+            )
+            .values(revoked_at=now)
+            .returning(RefreshToken.id)
+        )
+        consumed = result.scalar_one_or_none() is not None
+        await self._session.commit()
+        return consumed
+
     async def revoke(self, token_id: uuid.UUID) -> None:
         from datetime import timezone
 
