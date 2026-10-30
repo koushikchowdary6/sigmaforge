@@ -124,14 +124,24 @@ class AuthService:
             await self._refresh_tokens.revoke_all_for_user(existing.user_id)
             raise RefreshTokenInvalidError("refresh token reuse detected; all sessions revoked")
 
-        if existing.expires_at < datetime.now(timezone.utc):
+        now = datetime.now(timezone.utc)
+        if existing.expires_at <= now:
             raise RefreshTokenInvalidError("refresh token expired")
 
         user = await self._users.get_by_id(existing.user_id)
         if user is None or not user.is_active:
             raise RefreshTokenInvalidError("account no longer active")
 
-        await self._refresh_tokens.revoke(existing.id)
+        # get_by_hash() can become stale between requests. An atomic
+        # compare-and-consume prevents concurrent refreshes from both
+        # minting a replacement token from the same credential.
+        consumed = await self._refresh_tokens.consume_if_active(existing.id, now=now)
+        if not consumed:
+            # Another request already rotated/revoked this token (or it
+            # expired while the request was in flight). Treat replay as a
+            # compromise, matching the already-revoked-token path above.
+            await self._refresh_tokens.revoke_all_for_user(existing.user_id)
+            raise RefreshTokenInvalidError("refresh token reuse detected; all sessions revoked")
         return await self._issue_token_pair(user, device_info=device_info, ip_address=ip_address)
 
     async def logout(self, *, raw_refresh_token: str) -> None:
