@@ -135,3 +135,150 @@ async def test_expired_refresh_token_cannot_be_consumed_in_postgres():
             assert persisted is not None and persisted.revoked_at is None
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_rotation_and_replay_revocation_cannot_leave_late_token_active():
+    """A replay must not miss a replacement created by a concurrent rotation.
+
+    Both transactions race on the same user lock. Either revocation wins and
+    rotation fails, or rotation wins and revocation burns the replacement.
+    """
+    engine = create_async_engine(os.environ["SIGMAFORGE_TEST_POSTGRES_URL"])
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    user_id = uuid.uuid4()
+    token_id = uuid.uuid4()
+    token_hash = f"rotation-replay-{token_id.hex}"
+    replacement_hash = f"replacement-{token_id.hex}"
+    try:
+        async with sessions() as session:
+            role_id = await session.scalar(
+                select(Role.id).where(Role.name == "detection_engineer")
+            )
+            assert role_id is not None
+            session.add(
+                User(
+                    id=user_id,
+                    email=f"rotation-replay-{user_id.hex}@example.test",
+                    hashed_password="not-used-for-repository-contract",
+                    full_name="Rotation Replay Test",
+                    role_id=role_id,
+                )
+            )
+            session.add(
+                RefreshToken(
+                    id=token_id,
+                    user_id=user_id,
+                    token_hash=token_hash,
+                    expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                )
+            )
+            await session.commit()
+
+        start = asyncio.Barrier(2)
+
+        async def rotate() -> bool:
+            async with sessions() as session:
+                repo = SqlAlchemyRefreshTokenRepository(session)
+                snapshot = await repo.get_by_hash(token_hash)
+                assert snapshot is not None and snapshot.revoked_at is None
+                await start.wait()
+                return await repo.rotate_if_active(
+                    token_id,
+                    user_id=user_id,
+                    now=datetime.now(timezone.utc),
+                    token_hash=replacement_hash,
+                    expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                    device_info=None,
+                    ip_address=None,
+                )
+
+        async def revoke() -> None:
+            async with sessions() as session:
+                repo = SqlAlchemyRefreshTokenRepository(session)
+                await start.wait()
+                await repo.revoke_all_for_user(user_id)
+
+        rotated, _ = await asyncio.wait_for(
+            asyncio.gather(rotate(), revoke()), timeout=20
+        )
+
+        async with sessions() as session:
+            tokens = (
+                await session.scalars(
+                    select(RefreshToken).where(RefreshToken.user_id == user_id)
+                )
+            ).all()
+            assert len(tokens) == (2 if rotated else 1)
+            assert all(token.revoked_at is not None for token in tokens)
+            if rotated:
+                assert any(token.token_hash == replacement_hash for token in tokens)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_transactional_rotation_commits_consumption_and_replacement_together():
+    engine = create_async_engine(os.environ["SIGMAFORGE_TEST_POSTGRES_URL"])
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    user_id = uuid.uuid4()
+    token_id = uuid.uuid4()
+    old_hash = f"transaction-old-{token_id.hex}"
+    new_hash = f"transaction-new-{token_id.hex}"
+    try:
+        async with sessions() as session:
+            role_id = await session.scalar(
+                select(Role.id).where(Role.name == "detection_engineer")
+            )
+            assert role_id is not None
+            session.add(
+                User(
+                    id=user_id,
+                    email=f"transaction-rotation-{user_id.hex}@example.test",
+                    hashed_password="not-used-for-repository-contract",
+                    full_name="Transactional Rotation Test",
+                    role_id=role_id,
+                )
+            )
+            session.add(
+                RefreshToken(
+                    id=token_id,
+                    user_id=user_id,
+                    token_hash=old_hash,
+                    expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                )
+            )
+            await session.commit()
+
+        async with sessions() as session:
+            repo = SqlAlchemyRefreshTokenRepository(session)
+            assert await repo.rotate_if_active(
+                token_id,
+                user_id=user_id,
+                now=datetime.now(timezone.utc),
+                token_hash=new_hash,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                device_info="integration-test",
+                ip_address=None,
+            )
+            assert not await repo.rotate_if_active(
+                token_id,
+                user_id=user_id,
+                now=datetime.now(timezone.utc),
+                token_hash=f"should-not-exist-{token_id.hex}",
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+                device_info=None,
+                ip_address=None,
+            )
+
+        async with sessions() as session:
+            tokens = (
+                await session.scalars(
+                    select(RefreshToken).where(RefreshToken.user_id == user_id)
+                )
+            ).all()
+            assert len(tokens) == 2
+            assert next(t for t in tokens if t.token_hash == old_hash).revoked_at is not None
+            assert next(t for t in tokens if t.token_hash == new_hash).revoked_at is None
+    finally:
+        await engine.dispose()
