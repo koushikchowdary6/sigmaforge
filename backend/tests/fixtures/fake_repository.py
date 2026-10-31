@@ -89,6 +89,37 @@ class FakeRefreshTokenRepository:
         token.revoked_at = now
         return True
 
+    async def rotate_if_active(
+        self,
+        token_id: uuid.UUID,
+        *,
+        user_id: uuid.UUID,
+        now: datetime,
+        token_hash: str,
+        expires_at: datetime,
+        device_info: str | None,
+        ip_address: str | None,
+    ) -> bool:
+        # No suspension between checking the old token and inserting the new
+        # one: the in-memory equivalent of the database transaction.
+        token = self.tokens.get(token_id)
+        if (
+            token is None
+            or token.user_id != user_id
+            or token.revoked_at is not None
+            or token.expires_at <= now
+        ):
+            return False
+        token.revoked_at = now
+        await self.create(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            device_info=device_info,
+            ip_address=ip_address,
+        )
+        return True
+
     async def revoke(self, token_id: uuid.UUID) -> None:
         from datetime import timezone
 

@@ -35,11 +35,11 @@ class RacingRefreshRepository(FakeRefreshTokenRepository):
             return snapshot
         return token
 
-    async def consume_if_active(self, token_id, *, now):
-        consumed = await super().consume_if_active(token_id, now=now)
-        if consumed:
+    async def rotate_if_active(self, token_id, **kwargs):
+        rotated = await super().rotate_if_active(token_id, **kwargs)
+        if rotated:
             self.successful_consumptions += 1
-        return consumed
+        return rotated
 
 
 def _make_service(settings, refresh_repo=None):

@@ -52,5 +52,24 @@ class RefreshTokenRepository(Protocol):
         must not both succeed because they both observed revoked_at=None.
         """
         ...
+    async def rotate_if_active(
+        self,
+        token_id: uuid.UUID,
+        *,
+        user_id: uuid.UUID,
+        now: datetime,
+        token_hash: str,
+        expires_at: datetime,
+        device_info: str | None,
+        ip_address: str | None,
+    ) -> bool:
+        """Atomically consume the old token and persist its replacement.
+
+        The transaction must serialize with revoke_all_for_user on the user
+        row, so a concurrent replay cannot miss a newly minted refresh token.
+        Returns False without creating a replacement if consumption fails.
+        """
+        ...
+
     async def revoke(self, token_id: uuid.UUID) -> None: ...
     async def revoke_all_for_user(self, user_id: uuid.UUID) -> None: ...
