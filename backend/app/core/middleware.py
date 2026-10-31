@@ -31,21 +31,34 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         token = request_id_ctx.set(request_id)
         start = time.perf_counter()
         try:
-            response = await call_next(request)
-        finally:
-            request_id_ctx.reset(token)
-        duration_ms = (time.perf_counter() - start) * 1000
-        response.headers["X-Request-ID"] = request_id
-        logger.info(
-            "request handled",
-            extra={
-                "extra_fields": {
+            try:
+                response = await call_next(request)
+            except Exception:
+                # Starlette's outer error middleware builds the final response.
+                # Log while the request context is still active, without
+                # disclosing exception text, request headers, or query values.
+                logger.error(
+                    "request raised an exception",
+                    extra={"extra_fields": {
+                        "request_id": request_id,
+                        "method": request.method,
+                        "path": request.url.path,
+                        "outcome": "exception",
+                        "duration_ms": round((time.perf_counter() - start) * 1000, 2),
+                    }},
+                )
+                raise
+            response.headers["X-Request-ID"] = request_id
+            logger.info(
+                "request handled",
+                extra={"extra_fields": {
                     "request_id": request_id,
                     "method": request.method,
                     "path": request.url.path,
                     "status_code": response.status_code,
-                    "duration_ms": round(duration_ms, 2),
-                }
-            },
-        )
-        return response
+                    "duration_ms": round((time.perf_counter() - start) * 1000, 2),
+                }},
+            )
+            return response
+        finally:
+            request_id_ctx.reset(token)
