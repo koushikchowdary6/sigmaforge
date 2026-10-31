@@ -103,6 +103,60 @@ class SqlAlchemyRefreshTokenRepository:
         await self._session.commit()
         return consumed
 
+    async def rotate_if_active(
+        self,
+        token_id: uuid.UUID,
+        *,
+        user_id: uuid.UUID,
+        now: datetime,
+        token_hash: str,
+        expires_at: datetime,
+        device_info: str | None,
+        ip_address: str | None,
+    ) -> bool:
+        # Serialize rotation with replay-triggered revoke_all_for_user using
+        # the same user-row lock. The old token and its replacement must be
+        # written in ONE transaction; separate commits leave a race where a
+        # replay revokes sessions before the replacement is inserted.
+        try:
+            locked_user = await self._session.scalar(
+                select(User.id).where(User.id == user_id).with_for_update()
+            )
+            if locked_user is None:
+                await self._session.rollback()
+                return False
+
+            consumed = await self._session.scalar(
+                update(RefreshToken)
+                .where(
+                    RefreshToken.id == token_id,
+                    RefreshToken.user_id == user_id,
+                    RefreshToken.revoked_at.is_(None),
+                    RefreshToken.expires_at > now,
+                )
+                .values(revoked_at=now)
+                .returning(RefreshToken.id)
+            )
+            if consumed is None:
+                await self._session.rollback()
+                return False
+
+            self._session.add(
+                RefreshToken(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    token_hash=token_hash,
+                    expires_at=expires_at,
+                    device_info=device_info,
+                    ip_address=ip_address,
+                )
+            )
+            await self._session.commit()
+            return True
+        except Exception:
+            await self._session.rollback()
+            raise
+
     async def revoke(self, token_id: uuid.UUID) -> None:
         from datetime import timezone
 
@@ -114,9 +168,19 @@ class SqlAlchemyRefreshTokenRepository:
     async def revoke_all_for_user(self, user_id: uuid.UUID) -> None:
         from datetime import timezone
 
-        await self._session.execute(
-            update(RefreshToken)
-            .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
-            .values(revoked_at=datetime.now(timezone.utc))
-        )
-        await self._session.commit()
+        # Same lock as rotate_if_active: replay revocation either happens
+        # before rotation (which then fails) or after it (revoking the new
+        # token too). It must never run between consumption and replacement.
+        try:
+            await self._session.scalar(
+                select(User.id).where(User.id == user_id).with_for_update()
+            )
+            await self._session.execute(
+                update(RefreshToken)
+                .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+                .values(revoked_at=datetime.now(timezone.utc))
+            )
+            await self._session.commit()
+        except Exception:
+            await self._session.rollback()
+            raise
