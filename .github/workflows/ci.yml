@@ -186,5 +186,5 @@ jobs:
       - name: Apply production Alembic schema to disposable PostgreSQL
         run: alembic upgrade head
 
-      - name: Exercise authenticated rule creation and rollback against PostgreSQL
-        run: pytest tests/integration/test_rule_create_postgres.py -v
+      - name: Exercise rule persistence and concurrent refresh consumption against PostgreSQL
+        run: pytest tests/integration/test_rule_create_postgres.py tests/integration/test_refresh_token_postgres.py -v
