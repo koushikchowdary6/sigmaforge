@@ -38,10 +38,16 @@ async def login(
             ip_address=client_ip,
         )
     except AccountLockedError:
-        logger.warning("login blocked: account locked", extra={"extra_fields": {"email": body.email}})
+        logger.warning(
+            "login blocked: account locked",
+            extra={"extra_fields": {"auth_outcome": "locked"}},
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_GENERIC_AUTH_ERROR) from None
     except InvalidCredentialsError:
-        logger.info("login failed: invalid credentials", extra={"extra_fields": {"email": body.email}})
+        logger.info(
+            "login failed: invalid credentials",
+            extra={"extra_fields": {"auth_outcome": "invalid_credentials"}},
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=_GENERIC_AUTH_ERROR) from None
 
     return TokenResponse(
