@@ -132,17 +132,34 @@ class AuthService:
         if user is None or not user.is_active:
             raise RefreshTokenInvalidError("account no longer active")
 
-        # get_by_hash() can become stale between requests. An atomic
-        # compare-and-consume prevents concurrent refreshes from both
-        # minting a replacement token from the same credential.
-        consumed = await self._refresh_tokens.consume_if_active(existing.id, now=now)
-        if not consumed:
-            # Another request already rotated/revoked this token (or it
-            # expired while the request was in flight). Treat replay as a
-            # compromise, matching the already-revoked-token path above.
+        # The old token and its replacement must commit together. The
+        # repository serializes this transaction with user-wide revocation,
+        # preventing a replay from revoking sessions just before a late
+        # replacement is inserted.
+        raw_refresh, refresh_hash = generate_refresh_token()
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=self._settings.jwt_refresh_token_ttl_seconds
+        )
+        rotated = await self._refresh_tokens.rotate_if_active(
+            existing.id,
+            user_id=existing.user_id,
+            now=now,
+            token_hash=refresh_hash,
+            expires_at=expires_at,
+            device_info=device_info,
+            ip_address=ip_address,
+        )
+        if not rotated:
+            # A competing request may have consumed or revoked this token.
             await self._refresh_tokens.revoke_all_for_user(existing.user_id)
             raise RefreshTokenInvalidError("refresh token reuse detected; all sessions revoked")
-        return await self._issue_token_pair(user, device_info=device_info, ip_address=ip_address)
+        return TokenPair(
+            access_token=create_access_token(
+                user_id=str(user.id), role=user.role.name, settings=self._settings
+            ),
+            refresh_token=raw_refresh,
+            expires_in=self._settings.jwt_access_token_ttl_seconds,
+        )
 
     async def logout(self, *, raw_refresh_token: str) -> None:
         token_hash = hash_refresh_token(raw_refresh_token)
