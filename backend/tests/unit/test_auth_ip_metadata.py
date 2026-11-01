@@ -74,18 +74,18 @@ async def test_login_and_refresh_ignore_invalid_optional_peer_metadata(settings)
     first = await service.login(
         email=user.email,
         password="correct-password",
-        device_info="browser/\\x00" + "x" * 400,
+        device_info="browser/\x00" + "x" * 400,
         ip_address="untrusted-hostname",
     )
     original = next(token for token in tokens.tokens.values() if token.revoked_at is None)
     assert original.ip_address is None
     assert len(original.device_info) == 255
-    assert "\\x00" not in original.device_info
+    assert "\x00" not in original.device_info
 
     rotated = await service.refresh(
         raw_refresh_token=first.refresh_token,
         ip_address="2001:0db8::1",
-        device_info="refreshed-\\ud800client\\n",
+        device_info="refreshed-\ud800client\n",
     )
     assert rotated.refresh_token != first.refresh_token
     active = [token for token in tokens.tokens.values() if token.revoked_at is None]
