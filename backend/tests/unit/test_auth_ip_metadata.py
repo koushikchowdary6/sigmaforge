@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from app.auth.service import AuthService, _validated_ip_address
+from app.auth.service import AuthService, _bounded_device_info, _validated_ip_address
 from app.core.security import hash_password
 from app.models.rbac import Role
 from app.models.user import User
@@ -32,6 +32,24 @@ from tests.fixtures.fake_repository import FakeRefreshTokenRepository, FakeUserR
 )
 def test_only_valid_peer_addresses_are_persisted(raw, expected):
     assert _validated_ip_address(raw) == expected
+
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (None, None),
+        ("", None),
+        ("\x00\n\r", None),
+        ("client\x00/1.0", "client/1.0"),
+        ("agent\ud800\udfff/2", "agent/2"),
+        ("client\n\t/3", "client/3"),
+        ("browser/" + "x" * 300, "browser/" + "x" * 247),
+        ("café/1.0", "café/1.0"),
+    ],
+)
+def test_device_info_is_safe_for_postgres_text_and_bounded(raw, expected):
+    assert _bounded_device_info(raw) == expected
 
 
 @pytest.mark.asyncio
@@ -56,17 +74,18 @@ async def test_login_and_refresh_ignore_invalid_optional_peer_metadata(settings)
     first = await service.login(
         email=user.email,
         password="correct-password",
-        device_info="browser/" + "x" * 400,
+        device_info="browser/\x00" + "x" * 400,
         ip_address="untrusted-hostname",
     )
     original = next(token for token in tokens.tokens.values() if token.revoked_at is None)
     assert original.ip_address is None
     assert len(original.device_info) == 255
+    assert "\x00" not in original.device_info
 
     rotated = await service.refresh(
         raw_refresh_token=first.refresh_token,
         ip_address="2001:0db8::1",
-        device_info="refreshed-client",
+        device_info="refreshed-\ud800client\n",
     )
     assert rotated.refresh_token != first.refresh_token
     active = [token for token in tokens.tokens.values() if token.revoked_at is None]

@@ -15,6 +15,7 @@ Controls implemented here, each tied to a THREAT_MODEL.md §4.1 entry:
 """
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -61,7 +62,16 @@ def _bounded_device_info(value: str | None) -> str | None:
     into a PostgreSQL string-length error. Preserve the beginning of the
     user agent for troubleshooting without persisting arbitrary header size.
     """
-    return value[:255] if value is not None else None
+    if value is None:
+        return None
+    # PostgreSQL text columns reject NUL bytes and UTF-16 surrogate code
+    # points cannot be encoded as UTF-8. Header metadata is untrusted and
+    # optional: remove unsafe controls before persisting, then bound length.
+    cleaned = "".join(
+        char for char in value
+        if unicodedata.category(char) not in {"Cc", "Cs"}
+    )[:255]
+    return cleaned or None
 
 
 def _validated_ip_address(value: str | None) -> str | None:
