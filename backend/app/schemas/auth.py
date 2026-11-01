@@ -13,11 +13,15 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    # Issued tokens are 64 URL-safe characters; cap untrusted input before
+    # hashing while leaving headroom for future token formats.
+    refresh_token: str = Field(min_length=1, max_length=512)
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    # Issued tokens are 64 URL-safe characters; cap untrusted input before
+    # hashing while leaving headroom for future token formats.
+    refresh_token: str = Field(min_length=1, max_length=512)
 
 
 class TokenResponse(BaseModel):
