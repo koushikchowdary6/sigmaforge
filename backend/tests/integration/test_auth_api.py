@@ -191,6 +191,48 @@ async def test_refresh_then_old_token_rejected(app_and_repo):
         assert replay_resp.status_code == 401
 
 
+
+@pytest.mark.asyncio
+async def test_long_user_agent_cannot_break_login_or_refresh_token_persistence(app_and_repo):
+    app, _users, refresh_repo, _user = app_and_repo
+    # refresh_tokens.device_info is VARCHAR(255) in PostgreSQL. A client
+    # controls User-Agent, so both creation and rotation must bound it.
+    user_agent = "test-agent/" + "x" * 500
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        login = await client.post(
+            "/api/v1/auth/login",
+            headers={"User-Agent": user_agent},
+            json={"email": "engineer@corp.com", "password": "correct-horse-battery-staple"},
+        )
+        assert login.status_code == 200
+        assert len(refresh_repo.tokens) == 1
+        first = next(iter(refresh_repo.tokens.values()))
+        assert first.device_info == user_agent[:255]
+
+        refresh = await client.post(
+            "/api/v1/auth/refresh",
+            headers={"User-Agent": user_agent},
+            json={"refresh_token": login.json()["refresh_token"]},
+        )
+        assert refresh.status_code == 200
+    assert len(refresh_repo.tokens) == 2
+    assert all(token.device_info == user_agent[:255] for token in refresh_repo.tokens.values())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["/api/v1/auth/refresh", "/api/v1/auth/logout"])
+@pytest.mark.parametrize("invalid_token", ["", "x" * 513])
+async def test_refresh_token_inputs_are_bounded_before_service_calls(
+    app_and_repo, endpoint, invalid_token
+):
+    app, _users, refresh_repo, _user = app_and_repo
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(endpoint, json={"refresh_token": invalid_token})
+    assert response.status_code == 422
+    assert invalid_token not in response.text if invalid_token else True
+    assert not refresh_repo.tokens
+
+
 @pytest.mark.asyncio
 async def test_security_headers_present_on_every_response():
     app = create_app()
