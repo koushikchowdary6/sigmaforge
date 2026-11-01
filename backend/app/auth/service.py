@@ -53,6 +53,16 @@ class TokenPair:
     expires_in: int = 0
 
 
+def _bounded_device_info(value: str | None) -> str | None:
+    """Keep untrusted User-Agent metadata within refresh_tokens VARCHAR(255).
+
+    An oversized header must not turn an otherwise valid login or refresh
+    into a PostgreSQL string-length error. Preserve the beginning of the
+    user agent for troubleshooting without persisting arbitrary header size.
+    """
+    return value[:255] if value is not None else None
+
+
 class AuthService:
     def __init__(
         self,
@@ -146,7 +156,7 @@ class AuthService:
             now=now,
             token_hash=refresh_hash,
             expires_at=expires_at,
-            device_info=device_info,
+            device_info=_bounded_device_info(device_info),
             ip_address=ip_address,
         )
         if not rotated:
@@ -180,7 +190,7 @@ class AuthService:
             user_id=user.id,
             token_hash=refresh_hash,
             expires_at=expires_at,
-            device_info=device_info,
+            device_info=_bounded_device_info(device_info),
             ip_address=ip_address,
         )
         return TokenPair(
