@@ -16,6 +16,7 @@ Controls implemented here, each tied to a THREAT_MODEL.md §4.1 entry:
 from __future__ import annotations
 
 import uuid
+from ipaddress import ip_address
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -61,6 +62,23 @@ def _bounded_device_info(value: str | None) -> str | None:
     user agent for troubleshooting without persisting arbitrary header size.
     """
     return value[:255] if value is not None else None
+
+
+def _validated_ip_address(value: str | None) -> str | None:
+    """Store only real IPv4/IPv6 addresses in PostgreSQL's INET column.
+
+    ASGI client metadata is normally an IP, but test clients, custom proxies,
+    or unusual server adapters can supply hostnames, zone-qualified IPv6, or
+    malformed values. Drop invalid optional telemetry rather than turning a
+    successful login/refresh into a database error. Never trust forwarding
+    headers as a replacement for the ASGI peer address.
+    """
+    if not isinstance(value, str) or not value or "%" in value:
+        return None
+    try:
+        return str(ip_address(value))
+    except ValueError:
+        return None
 
 
 class AuthService:
@@ -157,7 +175,7 @@ class AuthService:
             token_hash=refresh_hash,
             expires_at=expires_at,
             device_info=_bounded_device_info(device_info),
-            ip_address=ip_address,
+            ip_address=_validated_ip_address(ip_address),
         )
         if not rotated:
             # A competing request may have consumed or revoked this token.
@@ -191,7 +209,7 @@ class AuthService:
             token_hash=refresh_hash,
             expires_at=expires_at,
             device_info=_bounded_device_info(device_info),
-            ip_address=ip_address,
+            ip_address=_validated_ip_address(ip_address),
         )
         return TokenPair(
             access_token=access_token,
