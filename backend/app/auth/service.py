@@ -15,11 +15,11 @@ Controls implemented here, each tied to a THREAT_MODEL.md §4.1 entry:
 """
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
-import unicodedata
 
 from app.auth.repository import RefreshTokenRepository, UserRepository
 from app.core.config import Settings
