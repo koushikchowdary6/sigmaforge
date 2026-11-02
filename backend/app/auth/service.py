@@ -64,12 +64,17 @@ def _bounded_device_info(value: str | None) -> str | None:
     """
     if value is None:
         return None
-    # PostgreSQL text columns reject NUL bytes and UTF-16 surrogate code
-    # points cannot be encoded as UTF-8. Header metadata is untrusted and
-    # optional: remove unsafe controls before persisting, then bound length.
+    # PostgreSQL rejects NUL and UTF-16 surrogates cannot be encoded as
+    # UTF-8. Also drop invisible format controls, bidi overrides/isolates,
+    # Unicode line separators, and variation selectors: these can disguise
+    # or reorder untrusted User-Agent text in operational logs and reviews.
+    # This is optional telemetry, not a user-visible Unicode text field.
+    # Bound *after* sanitization so safe prefixes are not needlessly lost.
     cleaned = "".join(
         char for char in value
-        if unicodedata.category(char) not in {"Cc", "Cs"}
+        if unicodedata.category(char) not in {"Cc", "Cf", "Cs", "Zl", "Zp"}
+        and not ("\ufe00" <= char <= "\ufe0f"
+                 or "\U000e0100" <= char <= "\U000e01ef")
     )[:255]
     return cleaned or None
 
