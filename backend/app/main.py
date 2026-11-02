@@ -12,14 +12,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api.v1.health import router as health_router
 from app.auth.router import router as auth_router
 from app.core.config import get_settings
 from app.core.database import db_manager
 from app.core.logging import configure_logging, get_logger
-from app.core.middleware import RequestLoggingMiddleware, SecurityHeadersMiddleware
+from app.core.middleware import RequestLoggingMiddleware, SecurityHeadersMiddleware, set_security_headers
 from app.detection.router import router as detection_router
 
 logger = get_logger("app.main")
@@ -77,10 +77,10 @@ def create_app() -> FastAPI:
         )
 
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
         trace_id = str(uuid.uuid4())
         logger.exception("unhandled exception", extra={"extra_fields": {"trace_id": trace_id}})
-        return JSONResponse(
+        return set_security_headers(JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "type": "https://sigmaforge.dev/errors/internal-error",
@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
                 "instance": str(request.url.path),
                 "trace_id": trace_id,
             },
-        )
+        ))
 
     app.include_router(health_router)
     app.include_router(auth_router, prefix="/api/v1")

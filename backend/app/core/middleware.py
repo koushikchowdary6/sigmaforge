@@ -14,20 +14,28 @@ from app.core.logging import get_logger, request_id_ctx
 logger = get_logger("app.request")
 
 
+def set_security_headers(response: Response) -> Response:
+    """Apply the API-wide policy, including responses built outside middleware.
+
+    Starlette's outer ServerErrorMiddleware constructs unhandled 500 responses
+    after inner middleware unwinds, so exception handlers must call this too.
+    """
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    # Auth endpoints return bearer/refresh tokens and /me returns account
+    # details. Prevent browsers and shared intermediaries from retaining
+    # any API response, including errors and future authenticated routes.
+    # This API serves no intentionally cacheable static assets.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+    return response
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "no-referrer"
-        # Auth endpoints return bearer/refresh tokens and /me returns account
-        # details. Prevent browsers and shared intermediaries from retaining
-        # any API response, including errors and future authenticated routes.
-        # This API serves no intentionally cacheable static assets.
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-        response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
-        return response
+        return set_security_headers(await call_next(request))
 
 
 def _safe_route_path(request: Request) -> str:
