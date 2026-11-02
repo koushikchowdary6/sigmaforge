@@ -25,6 +25,21 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _safe_route_path(request: Request) -> str:
+    """Log route templates, never attacker-controlled raw URL path segments.
+
+    A matched FastAPI route exposes a stable path such as
+    /api/v1/rules/{rule_id}. Unmatched paths (including 404s and errors
+    raised before routing) may contain arbitrary secrets or log-control
+    characters, so use a fixed sentinel rather than request.url.path.
+    """
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if isinstance(template, str) and template.startswith("/") and len(template) <= 256:
+        return template
+    return "<unmatched>"
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = str(uuid.uuid4())
@@ -42,7 +57,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     extra={"extra_fields": {
                         "request_id": request_id,
                         "method": request.method,
-                        "path": request.url.path,
+                        "path": _safe_route_path(request),
                         "outcome": "exception",
                         "duration_ms": round((time.perf_counter() - start) * 1000, 2),
                     }},
@@ -54,7 +69,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 extra={"extra_fields": {
                     "request_id": request_id,
                     "method": request.method,
-                    "path": request.url.path,
+                    "path": _safe_route_path(request),
                     "status_code": response.status_code,
                     "duration_ms": round((time.perf_counter() - start) * 1000, 2),
                 }},
