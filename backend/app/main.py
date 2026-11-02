@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api.v1.health import router as health_router
 from app.auth.router import router as auth_router
@@ -77,7 +77,7 @@ def create_app() -> FastAPI:
         )
 
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> Response:
         trace_id = str(uuid.uuid4())
         logger.exception("unhandled exception", extra={"extra_fields": {"trace_id": trace_id}})
         return set_security_headers(JSONResponse(
