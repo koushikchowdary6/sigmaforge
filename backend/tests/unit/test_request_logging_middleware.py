@@ -6,6 +6,8 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -117,3 +119,22 @@ async def test_exception_before_route_resolution_uses_safe_sentinel(caplog):
     record = next(r for r in caplog.records if r.message == "request raised an exception")
     assert record.extra_fields["path"] == "<unmatched>"
     assert "RESET_SECRET_123" not in caplog.text
+
+
+def test_real_fastapi_router_exposes_template_without_logging_identifier(caplog):
+    # A real ASGI request checks the routing/middleware integration, not
+    # merely a mocked scope populated by a unit-test callback.
+    app = FastAPI()
+    app.add_middleware(RequestLoggingMiddleware)
+
+    @app.get("/api/v1/users/{user_id}")
+    def read_user(user_id: str):
+        return {"ok": True}
+
+    with caplog.at_level(logging.INFO, logger="app.request"):
+        with TestClient(app) as client:
+            response = client.get("/api/v1/users/SENSITIVE_USER_987")
+    assert response.status_code == 200
+    record = next(r for r in caplog.records if r.message == "request handled")
+    assert record.extra_fields["path"] == "/api/v1/users/{user_id}"
+    assert "SENSITIVE_USER_987" not in caplog.text
