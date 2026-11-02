@@ -20,6 +20,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
+        # Auth endpoints return bearer/refresh tokens and /me returns account
+        # details. Prevent browsers and shared intermediaries from retaining
+        # any API response, including errors and future authenticated routes.
+        # This API serves no intentionally cacheable static assets.
+        response.headers["Cache-Control"] = "no-store"
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
         response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
         return response
