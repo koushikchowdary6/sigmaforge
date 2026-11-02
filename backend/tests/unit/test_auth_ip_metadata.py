@@ -46,6 +46,13 @@ def test_only_valid_peer_addresses_are_persisted(raw, expected):
         ("client\n\t/3", "client/3"),
         ("browser/" + "x" * 300, "browser/" + "x" * 247),
         ("café/1.0", "café/1.0"),
+        ("browser\u202e/1.0", "browser/1.0"),
+        ("client\u2066/2.0", "client/2.0"),
+        ("client\u200b/3.0", "client/3.0"),
+        ("client\u2028/4.0", "client/4.0"),
+        ("client\ufe0f/5.0", "client/5.0"),
+        ("client\U000e0100/6.0", "client/6.0"),
+        ("emoji\u200d/7.0", "emoji/7.0"),
     ],
 )
 def test_device_info_is_safe_for_postgres_text_and_bounded(raw, expected):
@@ -74,13 +81,14 @@ async def test_login_and_refresh_ignore_invalid_optional_peer_metadata(settings)
     first = await service.login(
         email=user.email,
         password="correct-password",
-        device_info="browser/\x00" + "x" * 400,
+        device_info="browser/\u202e\x00" + "x" * 400,
         ip_address="untrusted-hostname",
     )
     original = next(token for token in tokens.tokens.values() if token.revoked_at is None)
     assert original.ip_address is None
     assert len(original.device_info) == 255
     assert "\x00" not in original.device_info
+    assert "\u202e" not in original.device_info
 
     rotated = await service.refresh(
         raw_refresh_token=first.refresh_token,
