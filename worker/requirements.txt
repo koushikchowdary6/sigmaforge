@@ -1,5 +1,5 @@
 celery[redis]==5.4.0
-redis==5.2.1
+redis==6.1.0
 pydantic==2.10.4
 pydantic-settings==2.7.1
 packaging==24.2
