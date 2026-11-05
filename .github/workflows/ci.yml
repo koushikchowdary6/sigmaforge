@@ -199,6 +199,9 @@ jobs:
       - name: Install backend test dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Validate PostgreSQL integration dependencies
+        run: python -m pip check
+
       - name: Apply production Alembic schema to disposable PostgreSQL
         run: alembic upgrade head
 
