@@ -172,6 +172,17 @@ jobs:
           scan-ref: .
           severity: CRITICAL,HIGH
           exit-code: 0 # informational until a documented triage/exception process exists
+          format: json
+          output: trivy-results.json
+
+      - name: Upload Trivy vulnerability report for triage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: filesystem-trivy-report
+          path: trivy-results.json
+          if-no-files-found: warn
+          retention-days: 14
 
   postgres-rule-integration:
     runs-on: ubuntu-latest
