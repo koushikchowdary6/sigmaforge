@@ -104,7 +104,20 @@ jobs:
         run: npx vite build
 
       - name: Dependency vulnerability scan (npm audit)
-        run: npm audit --audit-level=high || true # informational until a triage process exists
+        run: |
+          # Preserve the complete advisory report for triage without making existing
+          # findings block unrelated pull requests until an exception policy exists.
+          npm audit --json > npm-audit.json || true
+          node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync("npm-audit.json","utf8")); if(r.error){console.error(r.error); process.exitCode=1} else {console.log("npm audit vulnerability counts:",JSON.stringify(r.metadata?.vulnerabilities ?? {}))}'
+
+      - name: Upload npm audit report for triage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-npm-audit
+          path: frontend/npm-audit.json
+          if-no-files-found: warn
+          retention-days: 14
 
   docker-integration:
     runs-on: ubuntu-latest
