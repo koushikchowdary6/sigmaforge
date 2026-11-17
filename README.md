@@ -80,7 +80,7 @@ These are authoring/audit views, not semantic validation or approval.
 ## Running it yourself
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/koushikchowdary6/sigmaforge.git
 cd sigmaforge
 cp .env.example .env
 ```
